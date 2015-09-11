@@ -59,38 +59,57 @@ func (s *State) Reset() {
 	s.Status.Interrupt = true
 }
 
-func calculateAddress(addressMode int, address, offset int16) int {
-	switch addressMode {
-	case AddressZeroPage:
-	case AddressZeroPageX:
-	case AddressZeroPageY:
-	case AddressAbsolute:
-	case AddressAbsoluteX:
-	case AddressAbsoluteY:
-	case AddressAccumulator:
-	case AddressIndirect:
-	case AddressIndirectX:
-	case AddressIndirectY:
-	case AddressRelative:
+func getValue(opcode []byte) uint16 {
+	if len(opcode) > 2 {
+		return (uint16(opcode[2]) << 8) | uint16(opcode[1])
+	} else if len(opcode) > 1 {
+		return uint16(opcode[1])
+	} else {
+		return uint16(0)
+	}
+}
 
+func (s *State) calculateAddress(addressMode int, offset int16) int {
+	switch addressMode {
+	case AddressZeroPage, AddressAbsolute:
+		return offset
+	case AddressZeroPageX, AddressAbsoluteX:
+		return offset + s.X
+	case AddressZeroPageY, AddressAbsoluteY:
+		return offset + s.Y
+	case AddressIndirect:
+		return int((uint16(s.Memory[offset+1]) << 8) | uint16(s.Memory[offset]))
+	case AddressIndirectX:
+		offset += s.X
+		return int((uint16(s.Memory[offset+1]) << 8) | uint16(s.Memory[offset]))
+	case AddressIndirectY:
+		return int((uint16(s.Memory[offset+1])<<8)|uint16(s.Memory[offset])) + int(s.Y)
+	case AddressRelative:
+		if offset&0x80 != 0 {
+			return int(s.PC + (offset & 0x7F))
+		} else {
+			return int(s.PC - (offset & 0x7F))
+		}
 	}
 
 	return 0
 }
 
-func (s *State) GetValue(addressMode int, address, offset int16) byte {
+func (s *State) GetValue(addressMode int, offset int16) byte {
 	switch addressMode {
 	case AddressImmediate:
 		return byte(offset)
+	case AddressAccumulator:
+		return byte(s.A)
 	case AddressImplied:
 		return byte(0) // Not sure why we should ever get here
 	default:
-		return *s.Memory[calculateAddress(addressMode, address, offset)]
+		return *s.Memory[s.calculateAddress(addressMode, address, offset)]
 	}
 
 	return byte(0)
 }
 
 func (s *State) SetValue(addressMode int, address, offset int16, val byte) {
-	*s.Memory[calculateAddress(addressMode, address, offset)] = val
+	*s.Memory[s.calculateAddress(addressMode, address, offset)] = val
 }
