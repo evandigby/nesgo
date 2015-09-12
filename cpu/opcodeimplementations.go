@@ -4,6 +4,9 @@ package cpu
 func ADC(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 		t := uint16(v) + uint16(s.A)
 		if s.Carry {
 			t += 1
@@ -14,22 +17,28 @@ func ADC(addressMode int, instructionLength uint16, operand uint16, cycles int) 
 		s.SetZero(bt)
 		s.SetSign(bt)
 		s.A = bt
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 func AND(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 		v = v & s.A
 		s.SetSign(v)
 		s.SetZero(v)
 		s.A = byte(v)
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 func ASL(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 
 		s.Carry = v&0x80 != 0
 		v <<= 1
@@ -37,15 +46,18 @@ func ASL(addressMode int, instructionLength uint16, operand uint16, cycles int) 
 		s.SetSign(v)
 		s.SetZero(v)
 
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 
 func branch(b bool, s *State, addressMode int, instructionLength uint16, operand uint16, cycles int) (int, uint16) {
 	if b {
 		v, c := s.CalculateAddress(addressMode, operand)
+		if c {
+			cycles += 2
+		}
 
-		return cycles + c + 1, v
+		return cycles, v
 	} else {
 		return cycles, s.PC + instructionLength
 	}
@@ -69,13 +81,16 @@ func BEQ(addressMode int, instructionLength uint16, operand uint16, cycles int) 
 func BIT(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 
 		r := s.A & byte(v)
 		s.SetZero(r)
 		s.Overflow = r&0x40 != 0
 		s.Sign = r&0x80 != 0
 
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 func BMI(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
@@ -144,12 +159,15 @@ func CLV(addressMode int, instructionLength uint16, operand uint16, cycles int) 
 
 func compare(addressMode int, instructionLength uint16, operand uint16, cycles int, V byte, s *State) (int, uint16) {
 	v, c := s.GetValue(addressMode, operand)
+	if c {
+		cycles += 1
+	}
 	t := V - v
 
 	s.Carry = V >= v
 	s.Zero = V == v
 	s.SetSign(t)
-	return cycles + c, s.PC + instructionLength
+	return cycles, s.PC + instructionLength
 }
 
 func CMP(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
@@ -196,10 +214,13 @@ func DEY(addressMode int, instructionLength uint16, operand uint16, cycles int) 
 func EOR(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 		s.A = s.A ^ v
 		s.SetZero(s.A)
 		s.SetSign(s.A)
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 func INC(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
@@ -245,39 +266,51 @@ func JSR(addressMode int, instructionLength uint16, operand uint16, cycles int) 
 func LDA(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 		s.A = v
 		s.SetZero(v)
 		s.SetSign(v)
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 func LDX(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 		s.X = v
 		s.SetZero(v)
 		s.SetSign(v)
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 func LDY(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 		s.Y = v
 		s.SetZero(v)
 		s.SetSign(v)
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 func LSR(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 		s.Carry = v&1 != 0
 		v >>= 1
 		s.SetZero(v)
 		s.SetSign(v)
 		s.SetValue(addressMode, operand, v)
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 func NOP(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
@@ -286,10 +319,13 @@ func NOP(addressMode int, instructionLength uint16, operand uint16, cycles int) 
 func ORA(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 		s.A = s.A | v
 		s.SetZero(s.A)
 		s.SetSign(s.A)
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 func PHA(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
@@ -360,6 +396,9 @@ func RTS(addressMode int, instructionLength uint16, operand uint16, cycles int) 
 func SBC(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := s.GetValue(addressMode, operand)
+		if c {
+			cycles += 1
+		}
 		t := uint16(s.A) - uint16(v)
 		if !s.Carry {
 			t -= 1
@@ -370,7 +409,7 @@ func SBC(addressMode int, instructionLength uint16, operand uint16, cycles int) 
 		s.SetZero(bt)
 		s.SetSign(bt)
 		s.A = bt
-		return cycles + c, s.PC + instructionLength
+		return cycles, s.PC + instructionLength
 	}
 }
 func SEC(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {

@@ -148,51 +148,51 @@ func (s *State) Reset() {
 	s.Interrupt = true
 }
 
-func (s *State) CalculateAddress(addressMode int, offset uint16) (address uint16, addedCycles int) {
+func (s *State) CalculateAddress(addressMode int, offset uint16) (address uint16, pageCrossed bool) {
 	switch addressMode {
 	case AddressZeroPage, AddressAbsolute:
-		return offset
+		return offset, false
 	case AddressZeroPageX, AddressAbsoluteX:
-		return offset + s.X
+		return offset + uint16(s.X), false
 	case AddressZeroPageY, AddressAbsoluteY:
-		return offset + s.Y
+		return offset + uint16(s.Y), false
 	case AddressIndirect:
-		return int((uint16(*s.Memory[offset+1]) << 8) | uint16(*s.Memory[offset]))
+		return (uint16(*s.Memory[offset+1]) << 8) | uint16(*s.Memory[offset]), false
 	case AddressIndirectX:
-		offset += s.X
-		return int((uint16(*s.Memory[offset+1]) << 8) | uint16(*s.Memory[offset]))
+		offset += uint16(s.X)
+		return (uint16(*s.Memory[offset+1]) << 8) | uint16(*s.Memory[offset]), false
 	case AddressIndirectY:
-		return int((uint16(*s.Memory[offset+1])<<8)|uint16(*s.Memory[offset])) + int(s.Y)
+		return (uint16(*s.Memory[offset+1]) << 8) | uint16(*s.Memory[offset]) + uint16(s.Y), false
 	case AddressRelative:
 		if offset&0x80 != 0 {
-			return int(s.PC + (offset & 0x7F))
+			return s.PC + (offset & 0x7F), false
 		} else {
-			return int(s.PC - (offset & 0x7F))
+			return s.PC - (offset & 0x7F), false
 		}
 	}
 
-	return 0
+	return 0, false
 }
 
-func (s *State) GetValue(addressMode int, offset uint16) (value byte, addedCycles int) {
+func (s *State) GetValue(addressMode int, offset uint16) (value byte, pageCrossed bool) {
 	switch addressMode {
 	case AddressImmediate:
-		return byte(offset), 0
+		return byte(offset), false
 	case AddressAccumulator:
-		return s.A, 0
+		return s.A, false
 	case AddressImplied:
-		return 0, 0 // Not sure why we should ever get here
+		return 0, false // Not sure why we should ever get here
 	default:
 		a, c := s.CalculateAddress(addressMode, offset)
 		return *s.Memory[a], c
 	}
 }
 
-func (s *State) SetValue(addressMode int, offset uint16, val byte) int {
+func (s *State) SetValue(addressMode int, offset uint16, val byte) bool {
 	switch addressMode {
 	case AddressAccumulator:
 		s.A = val
-		return 0
+		return false
 	default:
 		v, c := s.CalculateAddress(addressMode, offset)
 		*s.Memory[v] = val
