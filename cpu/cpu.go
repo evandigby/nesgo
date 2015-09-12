@@ -83,8 +83,46 @@ type State struct {
 	Registers
 	Flags
 
-	Memory []*byte
-	Stack  []*byte
+	Memory         []*byte
+	Stack          []*byte
+	PPURegisters   []*byte
+	APUIORegisters []*byte
+	Cartridge      []*byte
+}
+
+func NewState() *State {
+	tm := make([]byte, 0xFFFF)
+	m := make([]*byte, 0xFFFF)
+	for i := range m {
+		m[i] = &tm[i]
+	}
+	// Make mirrored memory
+	for i := 1; i <= 3; i++ {
+		o := i * 0x0800
+		for x := 0; x < 0x0800; x++ {
+			m[o+x] = m[x]
+		}
+	}
+	// Make stack helper
+	s := m[0x0100:0x01FF]
+
+	// PPU Register helper
+	ppu := m[0x2000:0x2007]
+
+	// Make mirrored ppu registers
+	for i := 1; i <= 0x1FF8/8; i++ {
+		o := 0x2000 + (i * 8)
+		for x := range ppu {
+			m[o+x] = ppu[x]
+		}
+	}
+
+	// APU Register helper
+	apu := m[0x4000:0x401F]
+
+	// Cartridge Memory helper
+	c := m[0x4020:0xFFFF]
+	return &State{Registers{}, Flags{}, m, s, ppu, apu, c}
 }
 
 func (s *State) Push(val byte) {
@@ -95,12 +133,6 @@ func (s *State) Push(val byte) {
 func (s *State) Pop() byte {
 	s.SP--
 	return *s.Stack[s.SP]
-}
-
-func NewState() *State {
-	m := make([]*byte, 0x8000)
-	s := m[0x0100:0x01FF]
-	return &State{Registers{}, Flags{}, m, s}
 }
 
 func (s *State) PowerUp() {
@@ -117,30 +149,29 @@ func (s *State) Reset() {
 }
 
 func (s *State) CalculateAddress(addressMode int, offset uint16) (address uint16, addedCycles int) {
-	return 0, 0 /*
-		switch addressMode {
-		case AddressZeroPage, AddressAbsolute:
-			return offset
-		case AddressZeroPageX, AddressAbsoluteX:
-			return offset + s.X
-		case AddressZeroPageY, AddressAbsoluteY:
-			return offset + s.Y
-		case AddressIndirect:
-			return int((uint16(s.Memory[offset+1]) << 8) | uint16(s.Memory[offset]))
-		case AddressIndirectX:
-			offset += s.X
-			return int((uint16(s.Memory[offset+1]) << 8) | uint16(s.Memory[offset]))
-		case AddressIndirectY:
-			return int((uint16(s.Memory[offset+1])<<8)|uint16(s.Memory[offset])) + int(s.Y)
-		case AddressRelative:
-			if offset&0x80 != 0 {
-				return int(s.PC + (offset & 0x7F))
-			} else {
-				return int(s.PC - (offset & 0x7F))
-			}
+	switch addressMode {
+	case AddressZeroPage, AddressAbsolute:
+		return offset
+	case AddressZeroPageX, AddressAbsoluteX:
+		return offset + s.X
+	case AddressZeroPageY, AddressAbsoluteY:
+		return offset + s.Y
+	case AddressIndirect:
+		return int((uint16(*s.Memory[offset+1]) << 8) | uint16(*s.Memory[offset]))
+	case AddressIndirectX:
+		offset += s.X
+		return int((uint16(*s.Memory[offset+1]) << 8) | uint16(*s.Memory[offset]))
+	case AddressIndirectY:
+		return int((uint16(*s.Memory[offset+1])<<8)|uint16(*s.Memory[offset])) + int(s.Y)
+	case AddressRelative:
+		if offset&0x80 != 0 {
+			return int(s.PC + (offset & 0x7F))
+		} else {
+			return int(s.PC - (offset & 0x7F))
 		}
+	}
 
-		return 0*/
+	return 0
 }
 
 func (s *State) GetValue(addressMode int, offset uint16) (value byte, addedCycles int) {
