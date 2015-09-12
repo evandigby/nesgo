@@ -22,16 +22,25 @@ func main() {
 	}
 	defer file.Close()
 
-	i, err := rom.NewINES(file)
+	ines, err := rom.NewINES(file)
 
 	if err != nil {
 		fmt.Printf("Error opening iNES File: %v\n", err)
 		return
 	}
 
-	d := cpu.Decompile(i.ProgramRom())
+	d := cpu.Decompile(ines.ProgramRom())
 
-	for i, o := range d {
+	i := 0
+	for {
+		if i >= len(d) {
+			break
+		}
+
+		o := d[i]
 		fmt.Printf("%X: %v\n", 0x8000+i, o.Disassemble())
+
+		i += len(o.Opcode())
+
 	}
 }
