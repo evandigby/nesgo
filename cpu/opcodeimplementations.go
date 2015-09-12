@@ -96,8 +96,15 @@ func BPL(addressMode int, instructionLength uint16, operand uint16, cycles int) 
 }
 func BRK(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		// TODO
-		return cycles, s.PC + instructionLength
+		s.PC++
+		s.Push(byte(s.PC >> 8))
+		s.Push(byte(s.PC))
+		s.Break = true
+		s.Push(s.Status())
+		s.Interrupt = true
+		lsd, _ := s.GetValue(AddressAbsolute, 0xFFFE)
+		msd, _ := s.GetValue(AddressAbsolute, 0xFFFE)
+		return cycles, uint16(lsd) | (uint16(msd) << 8)
 	}
 }
 func BVC(addressMode int, instructionLength uint16, operand uint16, cycles int) Executer {
