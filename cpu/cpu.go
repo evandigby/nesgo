@@ -1,5 +1,7 @@
 package cpu
 
+import "github.com/evandigby/nesgo/rom"
+
 const (
 	AddressImmediate int = iota
 	AddressZeroPage
@@ -15,6 +17,29 @@ const (
 	AddressIndirectY
 	AddressRelative
 )
+
+type CPU struct {
+	state *State
+	rom   rom.ROM
+}
+
+func NewCPU(r rom.ROM) *CPU {
+	return &CPU{NewState(), r}
+}
+
+func (c *CPU) loadRom() {
+
+}
+
+func (c *CPU) execute() {
+	for {
+
+	}
+}
+
+func (c *CPU) Run() {
+	go c.execute()
+}
 
 type Flags struct {
 	Carry     bool
@@ -83,11 +108,13 @@ type State struct {
 	Registers
 	Flags
 
-	Memory         []*byte
-	Stack          []*byte
-	PPURegisters   []*byte
-	APUIORegisters []*byte
-	Cartridge      []*byte
+	Sync chan int `json:"-"`
+
+	Memory         []*byte `json:"-"`
+	Stack          []*byte `json:"-"`
+	PPURegisters   []*byte `json:"-"`
+	APUIORegisters []*byte `json:"-"`
+	Cartridge      []*byte `json:"-"`
 }
 
 func NewState() *State {
@@ -104,7 +131,7 @@ func NewState() *State {
 		}
 	}
 	// Make stack helper
-	s := m[0x0100:0x01FF]
+	s := m[0x0100:0xFFFF] //m[0x0100:0x01FF]
 
 	// PPU Register helper
 	ppu := m[0x2000:0x2007]
@@ -122,7 +149,7 @@ func NewState() *State {
 
 	// Cartridge Memory helper
 	c := m[0x4020:0xFFFF]
-	return &State{Registers{}, Flags{}, m, s, ppu, apu, c}
+	return &State{Registers{}, Flags{}, make(chan int), m, s, ppu, apu, c}
 }
 
 func (s *State) Push(val byte) {
@@ -150,19 +177,28 @@ func (s *State) Reset() {
 
 func (s *State) CalculateAddress(addressMode int, offset uint16) (address uint16, pageCrossed bool) {
 	switch addressMode {
-	case AddressZeroPage, AddressAbsolute:
+	case AddressZeroPage:
+		return uint16(byte(offset)), false
+	case AddressAbsolute:
 		return offset, false
-	case AddressZeroPageX, AddressAbsoluteX:
+	case AddressZeroPageX:
+		return uint16(byte(offset) + s.X), false
+	case AddressZeroPageY:
+		return uint16(byte(offset) + s.Y), false
+	case AddressAbsoluteX:
 		return offset + uint16(s.X), false
-	case AddressZeroPageY, AddressAbsoluteY:
+	case AddressAbsoluteY:
 		return offset + uint16(s.Y), false
 	case AddressIndirect:
 		return (uint16(*s.Memory[offset+1]) << 8) | uint16(*s.Memory[offset]), false
 	case AddressIndirectX:
-		offset += uint16(s.X)
-		return (uint16(*s.Memory[offset+1]) << 8) | uint16(*s.Memory[offset]), false
+		lsb := byte(offset) + s.X
+		msb := lsb + 1
+		return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb]), false
 	case AddressIndirectY:
-		return (uint16(*s.Memory[offset+1]) << 8) | uint16(*s.Memory[offset]) + uint16(s.Y), false
+		lsb := *s.Memory[byte(offset)]
+		msb := *s.Memory[byte(offset)+1]
+		return ((uint16(msb) << 8) | uint16(*s.Memory[lsb])) + uint16(s.Y), false
 	case AddressRelative:
 		if offset&0x80 != 0 {
 			return s.PC + (offset & 0x7F), false
@@ -184,7 +220,11 @@ func (s *State) GetValue(addressMode int, offset uint16) (value byte, pageCrosse
 		return 0, false // Not sure why we should ever get here
 	default:
 		a, c := s.CalculateAddress(addressMode, offset)
-		return *s.Memory[a], c
+		if a >= 0 && a < uint16(len(s.Memory)) {
+			return *s.Memory[a], c
+		} else {
+			return 0, c
+		}
 	}
 }
 
@@ -195,7 +235,9 @@ func (s *State) SetValue(addressMode int, offset uint16, val byte) bool {
 		return false
 	default:
 		v, c := s.CalculateAddress(addressMode, offset)
-		*s.Memory[v] = val
+		if v >= 0 && v < uint16(len(s.Memory)) {
+			*s.Memory[v] = val
+		}
 		return c
 	}
 }

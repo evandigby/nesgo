@@ -3,12 +3,18 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
+	"time"
 
+	"github.com/evandigby/nesgo/clock"
 	"github.com/evandigby/nesgo/cpu"
+	"github.com/evandigby/nesgo/debug"
 	"github.com/evandigby/nesgo/rom"
 )
 
 func main() {
+	old := runtime.GOMAXPROCS(4)
+	fmt.Printf("Old: %v\n", old)
 	if len(os.Args) < 2 {
 		fmt.Printf("Not enough args\n")
 		return
@@ -30,17 +36,44 @@ func main() {
 	}
 
 	d := cpu.Decompile(ines.ProgramRom())
+	/*
+		i := 0
+		for {
+			if i >= len(d) {
+				break
+			}
 
-	i := 0
-	for {
-		if i >= len(d) {
-			break
+			o := d[i]
+			fmt.Printf("%X: %v\n", 0x8000+i, o.Disassemble())
+
+			i += len(o.Opcode())
 		}
+	*/
+	e := cpu.Execution(d)
+	s := cpu.NewState()
 
-		o := d[i]
-		fmt.Printf("%X: %v\n", 0x8000+i, o.Disassemble())
+	ppu := make(chan int)
 
-		i += len(o.Opcode())
+	go func() {
+		for {
+			ppu <- 0
+		}
+	}()
 
-	}
+	go func() {
+		for {
+			for _, e := range e {
+				c, _ := e(s)
+				s.Sync <- c
+			}
+		}
+	}()
+
+	clock := clock.NewClock(21477272, s.Sync, ppu)
+	clock.Run()
+
+	debugger := debug.NewDebugger(s, clock, "./debug/ui/")
+	debugger.Start()
+	time.Sleep(100 * time.Second)
+	clock.Stop()
 }

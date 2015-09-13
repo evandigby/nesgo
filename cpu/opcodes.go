@@ -67,7 +67,7 @@ func Decompile(memory []byte) []*Opcode {
 	return codes
 }
 
-func Execution(opcodes []Opcode) []Executer {
+func Execution(opcodes []*Opcode) []Executer {
 	e := make([]Executer, len(opcodes))
 	for i, o := range opcodes {
 		e[i] = o.Executer()
