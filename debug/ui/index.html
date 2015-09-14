@@ -2,34 +2,158 @@
 <head>
 	<title>Nesgo Debug UI</title>
 	<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+	<script type="text/javascript">
+		var cpuStateInterval;
+		var memoryInterval;
+		var stackInterval;
+
+		var memoryOffsetStart = 0;
+		var memoryOffsetEnd = 0x00FF;
+		function updateCpuState() {
+			$.getJSON("http://localhost:9905/cpu",
+			        function(data){
+			        	$("#Carry").text(data.Carry)
+			        	$("#Zero").text(data.Zero)
+			        	$("#Interrupt").text(data.Interrupt)
+			        	$("#Decimal").text(data.Decimal)
+			        	$("#Break").text(data.Break)
+			        	$("#Overflow").text(data.Overflow)
+			        	$("#Sign").text(data.Sign)
+
+			        	$("#PC").text(data.PC.toString(16))
+			        	$("#A").text(data.A.toString(16))
+			        	$("#X").text(data.X.toString(16))
+			        	$("#Y").text(data.Y.toString(16))
+			        	$("#SP").text(data.SP.toString(16))
+			          })
+			.fail(function() {
+				clearInterval(cpuStateInterval)
+			});
+		}
+
+
+		function updateMemoryTable(tablename, title, data) {
+			var coloff = 0;
+			var rowoff = 0;
+
+			var table = document.createElement('table');
+			table.id = tablename;
+			table.width = "100%";
+			table.border = 1;
+			var row = document.createElement('tr');   
+			var td = document.createElement('th');
+			td.colSpan = '18';
+			var val = document.createTextNode(title);
+			td.appendChild(val);
+			row.appendChild(td);
+			$.each(data, function(i, v) {
+				if (coloff == 0) {
+					table.appendChild(row)
+					row = document.createElement('tr');   
+					var td = document.createElement('th');
+					var val = document.createTextNode(rowoff.toString(16));
+					td.appendChild(val);
+					row.appendChild(td);
+				}
+
+				var td = document.createElement('td');
+				var val = document.createTextNode(v.toString(16));
+				td.appendChild(val);
+				row.appendChild(td)
+
+				if (coloff >= 16) {
+					rowoff = rowoff + coloff;
+					coloff = 0
+				} else {
+					coloff += 1;
+				}
+			})
+
+			table.appendChild(row)
+
+			$('#' + tablename).replaceWith(table)
+		}
+
+		function updateMemory() {
+			$.getJSON("http://localhost:9905/memory", {
+				start: memoryOffsetStart.toString(16), 
+				end: memoryOffsetEnd.toString(16)
+			},
+			function(data){ updateMemoryTable('MemoryTable', 'Memory', data); })
+			.fail(function() {
+				clearInterval(memoryInterval)
+			});
+		}
+
+		function updateStack() {
+			$.getJSON("http://localhost:9905/stack", {
+				start: memoryOffsetStart.toString(16), 
+				end: memoryOffsetEnd.toString(16)
+			},
+			function(data) { updateMemoryTable('StackTable', 'Stack', data); })
+			.fail(function() {
+				clearInterval(memoryInterval)
+			});
+		}
+
+		$( document ).ready( function() {
+			updateCpuState()
+			cpuStateInterval = setInterval(updateCpuState, 2000)
+			updateMemory()
+			memoryInterval = setInterval(updateMemory, 5000)
+			updateStack()
+			stackInterval = setInterval(updateStack, 2000)
+		});
+	</script>
 </head>
 <body>
 	<div id="cpustate">
-		<table>
+		<table width="100%">
+			<tr><th colspan="7">CPU State Flags</th></tr>
 			<tr>
-				<th>
-						Carry     
-				</th>
-				<th>
-	Zero      
-				</th>
-				<th>
-	Interrupt 
-				</th>
-				<th>
-	Decimal   
-				</th>
-				<th>
-	Break     
-				</th>
-				<th>
-	Overflow  
-				</th>
-				<th>
-	Sign      
-				</th>
+				<th>Carry</th>
+				<th>Zero</th>
+				<th>Interrupt</th>
+				<th>Decimal</th>
+				<th>Break</th>
+				<th>Overflow</th>
+				<th>Sign</th>
+			</tr>
+			<tr>
+				<td id="Carry"></td>
+				<td id="Zero"></td>
+				<td id="Interrupt"></td>
+				<td id="Decimal"></td>
+				<td id="Break"></td>
+				<td id="Overflow"></td>
+				<td id="Sign"></td>
 			</tr>
 		</table>
+		<table width="100%">
+			<tr>
+				<th colspan="5">CPU Registers</th>
+			</tr>
+			<tr>
+				<th>PC</th>
+				<th>A</th>
+				<th>X</th>
+				<th>Y</th>
+				<th>SP</th>
+			</tr>
+			<tr>
+				<td id="PC"></td>
+				<td id="A"></td>
+				<td id="X"></td>
+				<td id="Y"></td>
+				<td id="SP"></td>
+			</tr>
+		</table>
+	</div>
+	<div id="Stack">
+		<table  width="100%" id="StackTable"></table>
+	</div>
+	<div id="Memory">
+		<table  width="100%" id="MemoryTable"></table>
 	</div>
 </body>
 </html>
