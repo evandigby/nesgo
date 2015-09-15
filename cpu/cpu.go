@@ -19,21 +19,46 @@ const (
 )
 
 type CPU struct {
-	state *State
+	State *State
 	rom   rom.ROM
+
+	Sync chan int
 }
 
 func NewCPU(r rom.ROM) *CPU {
-	return &CPU{NewState(), r}
+	return &CPU{NewState(), r, make(chan int)}
 }
 
-func (c *CPU) loadRom() {
+func (c *CPU) loadRom(r rom.ROM) {
+	mirror := r.Pages() == 1
+	for i, v := range r.ProgramRom() {
+		*c.State.Cartridge[i] = *v
+		if mirror {
+			*c.State.Cartridge[i+0x4000] = *v
+		}
+	}
 
+	c.State.Opcodes = make([]*Opcode, len(c.State.Memory))
+	c.State.Executers = make([]Executer, len(c.State.Memory))
+	for i, _ := range c.State.Memory {
+		op := NewOpcode(c.State.Memory, i)
+		if op != nil {
+			c.State.Opcodes[i] = op
+			c.State.Executers[i] = op.Executer()
+		}
+	}
 }
 
 func (c *CPU) execute() {
-	for {
+	c.loadRom(c.rom)
+	c.State.PC = 0xC000
 
+	for {
+		<-c.Sync
+		cycles, pc := c.State.Executers[c.State.PC](c.State)
+		c.State.PC = pc
+
+		c.Sync <- cycles
 	}
 }
 
@@ -108,18 +133,18 @@ type State struct {
 	Registers
 	Flags
 
-	Sync chan int `json:"-"`
-
-	Memory         []*byte `json:"-"`
-	Stack          []*byte `json:"-"`
-	PPURegisters   []*byte `json:"-"`
-	APUIORegisters []*byte `json:"-"`
-	Cartridge      []*byte `json:"-"`
+	Memory         []*byte    `json:"-"`
+	Stack          []*byte    `json:"-"`
+	PPURegisters   []*byte    `json:"-"`
+	APUIORegisters []*byte    `json:"-"`
+	Cartridge      []*byte    `json:"-"`
+	Executers      []Executer `json:"-"`
+	Opcodes        []*Opcode  `json:"-"`
 }
 
 func NewState() *State {
-	tm := make([]byte, 0xFFFF)
-	m := make([]*byte, 0xFFFF)
+	tm := make([]byte, 0x10000)
+	m := make([]*byte, 0x10000)
 	for i := range m {
 		m[i] = &tm[i]
 	}
@@ -148,8 +173,8 @@ func NewState() *State {
 	apu := m[0x4000:0x401F]
 
 	// Cartridge Memory helper
-	c := m[0x4020:0xFFFF]
-	return &State{Registers{}, Flags{}, make(chan int), m, s, ppu, apu, c}
+	c := m[0x8000:0x10000]
+	return &State{Registers{}, Flags{}, m, s, ppu, apu, c, nil, nil}
 }
 
 func (s *State) Push(val byte) {
@@ -175,7 +200,7 @@ func (s *State) Reset() {
 	s.Interrupt = true
 }
 
-func (s *State) CalculateAddress(addressMode int, offset uint16) (address uint16, pageCrossed bool) {
+func (s *State) CalculateAddress(addressMode int, instructionLength, offset uint16) (address uint16, pageCrossed bool) {
 	switch addressMode {
 	case AddressZeroPage:
 		return uint16(byte(offset)), false
@@ -200,8 +225,8 @@ func (s *State) CalculateAddress(addressMode int, offset uint16) (address uint16
 		msb := *s.Memory[byte(offset)+1]
 		return ((uint16(msb) << 8) | uint16(*s.Memory[lsb])) + uint16(s.Y), false
 	case AddressRelative:
-		if offset&0x80 != 0 {
-			return s.PC + (offset & 0x7F), false
+		if offset&0x80 == 0 {
+			return s.PC + instructionLength + (offset & 0x7F), false
 		} else {
 			return s.PC - (offset & 0x7F), false
 		}
@@ -210,16 +235,16 @@ func (s *State) CalculateAddress(addressMode int, offset uint16) (address uint16
 	return 0, false
 }
 
-func (s *State) GetValue(addressMode int, offset uint16) (value byte, pageCrossed bool) {
+func (s *State) GetValue(addressMode int, instructionLength, offset uint16) (value byte, pageCrossed bool) {
 	switch addressMode {
 	case AddressImmediate:
-		return byte(offset), false
+		return byte(offset + instructionLength), false
 	case AddressAccumulator:
 		return s.A, false
 	case AddressImplied:
 		return 0, false // Not sure why we should ever get here
 	default:
-		a, c := s.CalculateAddress(addressMode, offset)
+		a, c := s.CalculateAddress(addressMode, instructionLength, offset)
 		if a >= 0 && a < uint16(len(s.Memory)) {
 			return *s.Memory[a], c
 		} else {
@@ -228,13 +253,13 @@ func (s *State) GetValue(addressMode int, offset uint16) (value byte, pageCrosse
 	}
 }
 
-func (s *State) SetValue(addressMode int, offset uint16, val byte) bool {
+func (s *State) SetValue(addressMode int, instructionLength, offset uint16, val byte) bool {
 	switch addressMode {
 	case AddressAccumulator:
 		s.A = val
 		return false
 	default:
-		v, c := s.CalculateAddress(addressMode, offset)
+		v, c := s.CalculateAddress(addressMode, instructionLength, offset)
 		if v >= 0 && v < uint16(len(s.Memory)) {
 			*s.Memory[v] = val
 		}

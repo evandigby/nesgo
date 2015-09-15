@@ -39,24 +39,28 @@ func (c *Clock) execute() {
 	fmt.Printf("Started Clock at %v with interval %v (%vMHz)\n", startTime, interval, float64(c.frequency)/1000000.0)
 
 	for {
+		if c.isDone {
+			break
+		} else if c.isPaused {
+			<-c.pause
+		}
+
+		c.cpu <- 0
 		cycles := <-c.cpu
 		c.tick += uint64(cycles)
 		//for i := 0; i < cycles*3; i++ {
 		//	<-c.ppu
 		//	c.tick++
 		//}
-
-		if c.isDone {
-			break
-		} else if c.isPaused {
-			waitFor(c.pause)
-		}
 	}
 
 	endTime := time.Now()
 
 	totalTime := endTime.Sub(startTime)
 	seconds := totalTime / time.Second
+	if seconds == 0 {
+		seconds = 1
+	}
 	mhz := float64(c.tick/uint64(seconds)) / 1000000.0
 	fmt.Printf("Stopped Clock at %v after %v ticks for %vMHz\n", endTime, c.tick, mhz)
 	c.running = false
@@ -77,12 +81,22 @@ func (c *Clock) Pause() {
 }
 
 func (c *Clock) Resume() {
+	c.isPaused = false
 	c.pause <- false
+}
+
+func (c *Clock) Step() {
+	if c.isPaused {
+		c.pause <- true
+	}
 }
 
 func (c *Clock) Stop() {
 	if c.running {
 		c.isDone = true
+		if c.isPaused {
+			c.pause <- true
+		}
 		<-c.done
 	}
 }

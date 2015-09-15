@@ -3,12 +3,27 @@
 	<title>Nesgo Debug UI</title>
 	<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
 	<script type="text/javascript">
-		var cpuStateInterval;
-		var memoryInterval;
-		var stackInterval;
+		var updateInterval;
 
-		var memoryOffsetStart = 0;
-		var memoryOffsetEnd = 0x00FF;
+		var memoryOffsetStart = 0x2000;
+		var memoryOffsetEnd = 0x20FF;
+
+		function step() {
+			$.ajax({
+				type: 'POST',
+				data: {},
+				url: 'http://localhost:9905/step',
+				dataType: 'json',
+				success: function(data) {
+					// Data contains cpu state
+					updateAll();
+				},
+				error: function(XMLHttpRequest, textStatus, errorThrown) {
+				     alert(textStatus);
+				  }
+			});
+		}
+
 		function updateCpuState() {
 			$.getJSON("http://localhost:9905/cpu",
 			        function(data){
@@ -27,12 +42,12 @@
 			        	$("#SP").text(data.SP.toString(16))
 			          })
 			.fail(function() {
-				clearInterval(cpuStateInterval)
+				clearInterval(updateInterval)
 			});
 		}
 
 
-		function updateMemoryTable(tablename, title, data) {
+		function updateMemoryTable(tablename, title, data, offset) {
 			var coloff = 0;
 			var rowoff = 0;
 
@@ -51,7 +66,7 @@
 					table.appendChild(row)
 					row = document.createElement('tr');   
 					var td = document.createElement('th');
-					var val = document.createTextNode(rowoff.toString(16));
+					var val = document.createTextNode((offset + rowoff).toString(16));
 					td.appendChild(val);
 					row.appendChild(td);
 				}
@@ -79,34 +94,85 @@
 				start: memoryOffsetStart.toString(16), 
 				end: memoryOffsetEnd.toString(16)
 			},
-			function(data){ updateMemoryTable('MemoryTable', 'Memory', data); })
+			function(data){ updateMemoryTable('MemoryTable', 'Memory', data, memoryOffsetStart); })
 			.fail(function() {
-				clearInterval(memoryInterval)
+				clearInterval(updateInterval)
 			});
 		}
 
 		function updateStack() {
 			$.getJSON("http://localhost:9905/stack", {
-				start: memoryOffsetStart.toString(16), 
-				end: memoryOffsetEnd.toString(16)
+				start: 0, 
+				end: 0xFF
 			},
-			function(data) { updateMemoryTable('StackTable', 'Stack', data); })
+			function(data) { updateMemoryTable('StackTable', 'Stack', data, 0); })
 			.fail(function() {
-				clearInterval(memoryInterval)
+				clearInterval(updateInterval)
 			});
 		}
 
-		$( document ).ready( function() {
+		function updateDisassembly() {
+			$.getJSON("http://localhost:9905/disassembly",
+			function(data) { 
+				var tablename = 'DisassemblyTable';
+
+				var table = document.createElement('table');
+				table.id = tablename;
+				table.width = "100%";
+				table.border = 1;
+				var row = document.createElement('tr');   
+				var td = document.createElement('th');
+				td.colSpan = '2';
+				var val = document.createTextNode('Disassembly');
+				td.appendChild(val);
+				row.appendChild(td);
+				table.appendChild(row)
+
+				$.each(data, function(i, v) {
+					row = document.createElement('tr');   
+					var td = document.createElement('th');
+					var val = document.createTextNode(v.Address.toString(16));
+					td.appendChild(val);
+					row.appendChild(td);
+
+					var td = document.createElement('td');
+					var val = document.createTextNode(v.Disassembly);
+					td.appendChild(val);
+					row.appendChild(td)
+
+					table.appendChild(row)
+				})
+
+				$('#' + tablename).replaceWith(table)
+			})
+			.fail(function() {
+				clearInterval(updateInterval)
+			});
+		}
+
+		function updateAll() {
 			updateCpuState()
-			cpuStateInterval = setInterval(updateCpuState, 2000)
 			updateMemory()
-			memoryInterval = setInterval(updateMemory, 5000)
 			updateStack()
-			stackInterval = setInterval(updateStack, 2000)
+			updateDisassembly()
+		}
+
+		$( document ).ready( function() {
+			updateAll();
+			//updateInterval = setInterval(updateAll, 2000);
+			$('#step').click(function(event) {
+				step();
+				event.preventDefault();
+			})
 		});
 	</script>
 </head>
 <body>
+	<h1>Controls</h1>
+	<div id="controls">
+		<input id="step" type="button" value="Step" />
+	</div>
+	<h1>State</h1>
 	<div id="cpustate">
 		<table width="100%">
 			<tr><th colspan="7">CPU State Flags</th></tr>
@@ -149,11 +215,14 @@
 			</tr>
 		</table>
 	</div>
+	<div id="Disassembly">
+		<table width="100%" id="DisassemblyTable"></table>
+	</div>
 	<div id="Stack">
-		<table  width="100%" id="StackTable"></table>
+		<table width="100%" id="StackTable"></table>
 	</div>
 	<div id="Memory">
-		<table  width="100%" id="MemoryTable"></table>
+		<table width="100%" id="MemoryTable"></table>
 	</div>
 </body>
 </html>

@@ -1,10 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"runtime"
-	"time"
+	"sync"
 
 	"github.com/evandigby/nesgo/clock"
 	"github.com/evandigby/nesgo/cpu"
@@ -35,23 +36,6 @@ func main() {
 		return
 	}
 
-	d := cpu.Decompile(ines.ProgramRom())
-	/*
-		i := 0
-		for {
-			if i >= len(d) {
-				break
-			}
-
-			o := d[i]
-			fmt.Printf("%X: %v\n", 0x8000+i, o.Disassemble())
-
-			i += len(o.Opcode())
-		}
-	*/
-	e := cpu.Execution(d)
-	s := cpu.NewState()
-
 	ppu := make(chan int)
 
 	go func() {
@@ -60,20 +44,37 @@ func main() {
 		}
 	}()
 
+	nesCPU := cpu.NewCPU(ines)
+	clock := clock.NewClock(21477272, nesCPU.Sync, ppu)
+	clock.Pause()
+	clock.Run()
+	nesCPU.Run()
+
+	debugger := debug.NewDebugger(nesCPU.State, clock, "./debug/ui/")
+	debugger.Start()
+
+	wg := sync.WaitGroup{}
+
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
-			for _, e := range e {
-				c, _ := e(s)
-				s.Sync <- c
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("> ")
+			text, _ := reader.ReadString('\n')
+			switch text {
+			case "quit\n":
+				clock.Stop()
+				return
+			case "step\n":
+				clock.Step()
+			case "pause\n":
+				clock.Pause()
+			case "resume\n":
+				clock.Resume()
 			}
 		}
 	}()
 
-	clock := clock.NewClock(21477272, s.Sync, ppu)
-	clock.Run()
-
-	debugger := debug.NewDebugger(s, clock, "./debug/ui/")
-	debugger.Start()
-	time.Sleep(100 * time.Second)
-	clock.Stop()
+	wg.Wait()
 }

@@ -13,7 +13,7 @@ type Executer func(s *State) (cycles int, nexPc uint16)
 
 type Opcode struct {
 	address     int
-	opcode      []byte
+	opcode      []*byte
 	addressMode int
 	instruction string
 	operands    string
@@ -23,7 +23,7 @@ type Opcode struct {
 
 func (o *Opcode) Address() int        { return o.address }
 func (o *Opcode) Operands() string    { return o.operands }
-func (o *Opcode) Opcode() []byte      { return o.opcode }
+func (o *Opcode) Opcode() []*byte     { return o.opcode }
 func (o *Opcode) Executer() Executer  { return o.executer }
 func (o *Opcode) Instruction() string { return o.instruction }
 func (o *Opcode) Cycles() int         { return o.cycles }
@@ -31,12 +31,15 @@ func (o *Opcode) Disassemble() string {
 	return strings.TrimSpace(fmt.Sprintf("%v %v", o.instruction, o.operands))
 }
 
-func NewOpcode(memory []byte, address int) *Opcode {
-	op := memory[address]
+func NewOpcode(memory []*byte, address int) *Opcode {
+	op := *memory[address]
 
 	addressMode := getAddressMode(op)
 
 	opcode := getOpcode(memory, address, addressMode)
+	if len(opcode) == 0 {
+		return nil
+	}
 	instruction := getInstruction(op)
 	cycles := getCycles(instruction, addressMode)
 	value := getValue(opcode)
@@ -57,7 +60,7 @@ func NewOpcode(memory []byte, address int) *Opcode {
 // us to differentiate between instructions and data ahead of time.
 // Any invalid opcodes will result in a "nop". Hopefully the code never jumps to them :)
 // Perhaps we should put a panicking instruction to suss these out.
-func Decompile(memory []byte) []*Opcode {
+func Decompile(memory []*byte) []*Opcode {
 	codes := make([]*Opcode, len(memory))
 
 	for i := 0; i < len(memory); i++ {
@@ -75,11 +78,11 @@ func Execution(opcodes []*Opcode) []Executer {
 	return e
 }
 
-func getValue(opcode []byte) uint16 {
+func getValue(opcode []*byte) uint16 {
 	if len(opcode) > 2 {
-		return (uint16(opcode[2]) << 8) | uint16(opcode[1])
+		return (uint16(*opcode[2]) << 8) | uint16(*opcode[1])
 	} else if len(opcode) > 1 {
-		return uint16(opcode[1])
+		return uint16(*opcode[1])
 	} else {
 		return uint16(0)
 	}
@@ -164,13 +167,14 @@ func getAddressMode(op byte) int {
 	}
 }
 
-func getOpcode(memory []byte, address int, addressMode int) []byte {
+func getOpcode(memory []*byte, address int, addressMode int) []*byte {
 
 	switch addressMode {
 	case AddressImplied,
 		AddressAccumulator:
-		return memory[address : address+1]
-
+		if address+1 < len(memory) {
+			return memory[address : address+1]
+		}
 	case AddressRelative,
 		AddressImmediate,
 		AddressZeroPage,
@@ -179,21 +183,24 @@ func getOpcode(memory []byte, address int, addressMode int) []byte {
 		AddressIndirectX,
 		AddressIndirectY:
 
-		return memory[address : address+2]
+		if address+2 < len(memory) {
+			return memory[address : address+2]
+		}
 
 	case AddressAbsolute,
 		AddressAbsoluteX,
 		AddressAbsoluteY,
 		AddressIndirect:
 
-		return memory[address : address+3]
-
+		if address+3 < len(memory) {
+			return memory[address : address+3]
+		}
 	}
 
-	panic(ErrorUnknownAddressMode)
+	return []*byte{}
 }
 
-func getExecuter(instruction string, opcode []byte, addressMode int, value uint16, cycles int) Executer {
+func getExecuter(instruction string, opcode []*byte, addressMode int, value uint16, cycles int) Executer {
 	length := uint16(len(opcode))
 	switch instruction {
 	case opADC:

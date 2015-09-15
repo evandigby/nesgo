@@ -45,58 +45,126 @@ func (d *Debugger) cpu(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, string(json))
 }
 
-func (d *Debugger) memory(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
+func (d *Debugger) getRange(m []*byte, r *http.Request) (string, error) {
+	l := int64(len(m))
 	b := int64(0)
-	e := int64(len(d.cpuState.Memory))
+	e := l
 
 	if start, ok := r.URL.Query()["start"]; ok && len(start) > 0 {
 		parsed, err := strconv.ParseInt(start[0], 16, 64)
-		if err == nil && parsed > 0 && parsed < e {
+		if err == nil && parsed > 0 && parsed <= l {
 			b = parsed
 		}
 	}
 
 	if end, ok := r.URL.Query()["end"]; ok && len(end) > 0 {
 		parsed, err := strconv.ParseInt(end[0], 16, 64)
-		if err == nil && parsed > b && parsed < e {
+		if err == nil && parsed > b && parsed <= l {
 			e = parsed
 		}
 	}
 
-	json, err := json.Marshal(d.cpuState.Memory[b:e])
+	mem := make([]uint64, e-b)
+	for i, v := range m[b:e] {
+		mem[i] = uint64(*v)
+	}
+	j, err := json.Marshal(mem)
+
+	if err != nil {
+		return "", err
+	}
+
+	return string(j), nil
+}
+
+func (d *Debugger) memory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	j, err := d.getRange(d.cpuState.Memory, r)
 
 	if err != nil {
 		d.writeError(w, err)
-		return
+	} else {
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, string(j))
 	}
-
-	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, string(json))
 }
 
 func (d *Debugger) stack(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	b := int64(0)
-	e := int64(len(d.cpuState.Stack))
+	j, err := d.getRange(d.cpuState.Stack, r)
+
+	if err != nil {
+		d.writeError(w, err)
+	}
+
+	if err != nil {
+		d.writeError(w, err)
+	} else {
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, string(j))
+	}
+}
+
+func (d *Debugger) step(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	d.clock.Step()
+
+	json, err := json.Marshal(d.cpuState)
+
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, string(json))
+}
+
+type Disassembly struct {
+	Address     string
+	Disassembly string
+}
+
+func (d *Debugger) disassembly(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	b := int64(d.cpuState.PC)
+	e := b + 20
 
 	if start, ok := r.URL.Query()["start"]; ok && len(start) > 0 {
 		parsed, err := strconv.ParseInt(start[0], 16, 64)
-		if err == nil && parsed > 0 && parsed < e {
+		if err == nil && parsed > 0 && parsed < int64(len(d.cpuState.Memory)) {
 			b = parsed
 		}
 	}
 
 	if end, ok := r.URL.Query()["end"]; ok && len(end) > 0 {
 		parsed, err := strconv.ParseInt(end[0], 16, 64)
-		if err == nil && parsed > b && parsed < e {
+		if err == nil && parsed > b && parsed < int64(len(d.cpuState.Memory)) {
 			e = parsed
 		}
 	}
 
-	json, err := json.Marshal(d.cpuState.Stack[b:e])
+	disasm := []Disassembly{}
+
+	i := b
+	for {
+		if i >= e {
+			break
+		}
+
+		o := cpu.NewOpcode(d.cpuState.Memory, int(i))
+		if o == nil {
+			disasm = append(disasm, Disassembly{strconv.FormatInt(int64(i), 16), "Unable to parse opcode"})
+			break
+		} else {
+			disasm = append(disasm, Disassembly{strconv.FormatInt(int64(i), 16), o.Disassemble()})
+		}
+		i += int64(len(o.Opcode()))
+	}
+
+	json, err := json.Marshal(disasm)
 
 	if err != nil {
 		d.writeError(w, err)
@@ -111,7 +179,9 @@ func (d *Debugger) serve() {
 	http.Handle("/ui/", http.StripPrefix("/ui", http.FileServer(http.Dir(d.uiFolder))))
 	http.HandleFunc("/cpu", d.cpu)
 	http.HandleFunc("/memory", d.memory)
-	http.HandleFunc("/stack", d.memory)
+	http.HandleFunc("/stack", d.stack)
+	http.HandleFunc("/disassembly", d.disassembly)
+	http.HandleFunc("/step", d.step)
 
 	http.ListenAndServe(":9905", nil)
 }
