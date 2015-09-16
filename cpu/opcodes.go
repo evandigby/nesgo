@@ -12,7 +12,7 @@ var ErrorUnknownInstruction = errors.New("Unknown Instruction")
 type Executer func(s *State) (cycles int, nexPc uint16)
 
 type Opcode struct {
-	address     int
+	address     uint16
 	opcode      []*byte
 	addressMode int
 	instruction string
@@ -20,7 +20,7 @@ type Opcode struct {
 	executer    Executer
 }
 
-func (o *Opcode) Address() int     { return o.address }
+func (o *Opcode) Address() uint16  { return o.address }
 func (o *Opcode) AddressMode() int { return o.addressMode }
 func (o *Opcode) Operand() uint16  { return getValue(o.opcode) }
 func (o *Opcode) Operands() string {
@@ -44,7 +44,7 @@ func (o *Opcode) Disassemble() string {
 	return strings.TrimSpace(fmt.Sprintf("%v %v", o.instruction, o.Operands()))
 }
 
-func NewOpcode(memory []*byte, address int) *Opcode {
+func NewOpcode(memory []*byte, address uint16) *Opcode {
 	op := *memory[address]
 
 	addressMode := getAddressMode(op)
@@ -63,7 +63,7 @@ func NewOpcode(memory []*byte, address int) *Opcode {
 		addressMode,
 		instruction,
 		cycles,
-		getExecuter(instruction, opcode, addressMode, value, cycles),
+		getExecuter(instruction, opcode, addressMode, address, value, cycles),
 	}
 }
 
@@ -76,7 +76,7 @@ func Decompile(memory []*byte) []*Opcode {
 	codes := make([]*Opcode, len(memory))
 
 	for i := 0; i < len(memory); i++ {
-		codes[i] = NewOpcode(memory, i)
+		codes[i] = NewOpcode(memory, uint16(i))
 	}
 
 	return codes
@@ -100,7 +100,7 @@ func getValue(opcode []*byte) uint16 {
 	}
 }
 
-func getOperands(addressMode int, address int, instructionLength, operand uint16) string {
+func getOperands(addressMode int, address, instructionLength, operand uint16) string {
 	f := "%02X"
 	if instructionLength == 3 {
 		f = "%04X"
@@ -111,7 +111,8 @@ func getOperands(addressMode int, address int, instructionLength, operand uint16
 	case AddressAccumulator:
 		return "A"
 	case AddressRelative:
-		return fmt.Sprintf(fmt.Sprintf("$%s", f), calculateRelativeAddress(instructionLength, operand, uint16(address)))
+		a, _ := calculateRelativeAddress(instructionLength, operand, uint16(address))
+		return fmt.Sprintf(fmt.Sprintf("$%s", f), a)
 	case AddressZeroPage, AddressAbsolute, AddressAddress:
 		return fmt.Sprintf(fmt.Sprintf("$%s", f), operand)
 	case AddressZeroPageX, AddressAbsoluteX:
@@ -187,14 +188,14 @@ func getAddressMode(op byte) int {
 	}
 }
 
-func getOpcode(memory []*byte, address int, addressMode int) []*byte {
+func getOpcode(memory []*byte, address uint16, addressMode int) []*byte {
 
+	var offset int
 	switch addressMode {
 	case AddressImplied,
 		AddressAccumulator:
-		if address+1 < len(memory) {
-			return memory[address : address+1]
-		}
+		offset = 1
+
 	case AddressRelative,
 		AddressImmediate,
 		AddressZeroPage,
@@ -203,9 +204,7 @@ func getOpcode(memory []*byte, address int, addressMode int) []*byte {
 		AddressIndirectX,
 		AddressIndirectY:
 
-		if address+2 < len(memory) {
-			return memory[address : address+2]
-		}
+		offset = 2
 
 	case AddressAbsolute,
 		AddressAddress,
@@ -213,130 +212,136 @@ func getOpcode(memory []*byte, address int, addressMode int) []*byte {
 		AddressAbsoluteY,
 		AddressIndirect:
 
-		if address+3 < len(memory) {
-			return memory[address : address+3]
-		}
+		offset = 3
+	}
+
+	start := int(address)
+	end := start + offset
+	if end < len(memory) {
+		return memory[start:end]
 	}
 
 	return []*byte{}
 }
 
-func getExecuter(instruction string, opcode []*byte, addressMode int, value uint16, cycles int) Executer {
+func getExecuter(instruction string, opcode []*byte, addressMode int, address, value uint16, cycles int) Executer {
 	length := uint16(len(opcode))
+	getter := getGetter(addressMode, address, length, value)
+	setter := getSetter(addressMode, address, length, value)
 	switch instruction {
 	case opADC:
-		return ADC(addressMode, length, value, cycles)
+		return ADC(getter, setter, address, length, value, cycles)
 	case opAND:
-		return AND(addressMode, length, value, cycles)
+		return AND(getter, setter, address, length, value, cycles)
 	case opASL:
-		return ASL(addressMode, length, value, cycles)
+		return ASL(getter, setter, address, length, value, cycles)
 	case opBCC:
-		return BCC(addressMode, length, value, cycles)
+		return BCC(getter, setter, address, length, value, cycles)
 	case opBCS:
-		return BCS(addressMode, length, value, cycles)
+		return BCS(getter, setter, address, length, value, cycles)
 	case opBEQ:
-		return BEQ(addressMode, length, value, cycles)
+		return BEQ(getter, setter, address, length, value, cycles)
 	case opBIT:
-		return BIT(addressMode, length, value, cycles)
+		return BIT(getter, setter, address, length, value, cycles)
 	case opBMI:
-		return BMI(addressMode, length, value, cycles)
+		return BMI(getter, setter, address, length, value, cycles)
 	case opBNE:
-		return BNE(addressMode, length, value, cycles)
+		return BNE(getter, setter, address, length, value, cycles)
 	case opBPL:
-		return BPL(addressMode, length, value, cycles)
+		return BPL(getter, setter, address, length, value, cycles)
 	case opBRK:
-		return BRK(addressMode, length, value, cycles)
+		return BRK(getter, setter, address, length, value, cycles)
 	case opBVC:
-		return BVC(addressMode, length, value, cycles)
+		return BVC(getter, setter, address, length, value, cycles)
 	case opBVS:
-		return BVS(addressMode, length, value, cycles)
+		return BVS(getter, setter, address, length, value, cycles)
 	case opCLC:
-		return CLC(addressMode, length, value, cycles)
+		return CLC(getter, setter, address, length, value, cycles)
 	case opCLD:
-		return CLD(addressMode, length, value, cycles)
+		return CLD(getter, setter, address, length, value, cycles)
 	case opCLI:
-		return CLI(addressMode, length, value, cycles)
+		return CLI(getter, setter, address, length, value, cycles)
 	case opCLV:
-		return CLV(addressMode, length, value, cycles)
+		return CLV(getter, setter, address, length, value, cycles)
 	case opCMP:
-		return CMP(addressMode, length, value, cycles)
+		return CMP(getter, setter, address, length, value, cycles)
 	case opCPX:
-		return CPX(addressMode, length, value, cycles)
+		return CPX(getter, setter, address, length, value, cycles)
 	case opCPY:
-		return CPY(addressMode, length, value, cycles)
+		return CPY(getter, setter, address, length, value, cycles)
 	case opDEC:
-		return DEC(addressMode, length, value, cycles)
+		return DEC(getter, setter, address, length, value, cycles)
 	case opDEX:
-		return DEX(addressMode, length, value, cycles)
+		return DEX(getter, setter, address, length, value, cycles)
 	case opDEY:
-		return DEY(addressMode, length, value, cycles)
+		return DEY(getter, setter, address, length, value, cycles)
 	case opEOR:
-		return EOR(addressMode, length, value, cycles)
+		return EOR(getter, setter, address, length, value, cycles)
 	case opINC:
-		return INC(addressMode, length, value, cycles)
+		return INC(getter, setter, address, length, value, cycles)
 	case opINX:
-		return INX(addressMode, length, value, cycles)
+		return INX(getter, setter, address, length, value, cycles)
 	case opINY:
-		return INY(addressMode, length, value, cycles)
+		return INY(getter, setter, address, length, value, cycles)
 	case opJMP:
-		return JMP(addressMode, length, value, cycles)
+		return JMP(getter, setter, address, length, value, cycles)
 	case opJSR:
-		return JSR(addressMode, length, value, cycles)
+		return JSR(getter, setter, address, length, value, cycles)
 	case opLDA:
-		return LDA(addressMode, length, value, cycles)
+		return LDA(getter, setter, address, length, value, cycles)
 	case opLDX:
-		return LDX(addressMode, length, value, cycles)
+		return LDX(getter, setter, address, length, value, cycles)
 	case opLDY:
-		return LDY(addressMode, length, value, cycles)
+		return LDY(getter, setter, address, length, value, cycles)
 	case opLSR:
-		return LSR(addressMode, length, value, cycles)
+		return LSR(getter, setter, address, length, value, cycles)
 	case opNOP:
-		return NOP(addressMode, length, value, cycles)
+		return NOP(getter, setter, address, length, value, cycles)
 	case opORA:
-		return ORA(addressMode, length, value, cycles)
+		return ORA(getter, setter, address, length, value, cycles)
 	case opPHA:
-		return PHA(addressMode, length, value, cycles)
+		return PHA(getter, setter, address, length, value, cycles)
 	case opPHP:
-		return PHP(addressMode, length, value, cycles)
+		return PHP(getter, setter, address, length, value, cycles)
 	case opPLA:
-		return PLA(addressMode, length, value, cycles)
+		return PLA(getter, setter, address, length, value, cycles)
 	case opPLP:
-		return PLP(addressMode, length, value, cycles)
+		return PLP(getter, setter, address, length, value, cycles)
 	case opROL:
-		return ROL(addressMode, length, value, cycles)
+		return ROL(getter, setter, address, length, value, cycles)
 	case opROR:
-		return ROR(addressMode, length, value, cycles)
+		return ROR(getter, setter, address, length, value, cycles)
 	case opRTI:
-		return RTI(addressMode, length, value, cycles)
+		return RTI(getter, setter, address, length, value, cycles)
 	case opRTS:
-		return RTS(addressMode, length, value, cycles)
+		return RTS(getter, setter, address, length, value, cycles)
 	case opSBC:
-		return SBC(addressMode, length, value, cycles)
+		return SBC(getter, setter, address, length, value, cycles)
 	case opSEC:
-		return SEC(addressMode, length, value, cycles)
+		return SEC(getter, setter, address, length, value, cycles)
 	case opSED:
-		return SED(addressMode, length, value, cycles)
+		return SED(getter, setter, address, length, value, cycles)
 	case opSEI:
-		return SEI(addressMode, length, value, cycles)
+		return SEI(getter, setter, address, length, value, cycles)
 	case opSTA:
-		return STA(addressMode, length, value, cycles)
+		return STA(getter, setter, address, length, value, cycles)
 	case opSTX:
-		return STX(addressMode, length, value, cycles)
+		return STX(getter, setter, address, length, value, cycles)
 	case opSTY:
-		return STY(addressMode, length, value, cycles)
+		return STY(getter, setter, address, length, value, cycles)
 	case opTAX:
-		return TAX(addressMode, length, value, cycles)
+		return TAX(getter, setter, address, length, value, cycles)
 	case opTAY:
-		return TAY(addressMode, length, value, cycles)
+		return TAY(getter, setter, address, length, value, cycles)
 	case opTSX:
-		return TSX(addressMode, length, value, cycles)
+		return TSX(getter, setter, address, length, value, cycles)
 	case opTXA:
-		return TXA(addressMode, length, value, cycles)
+		return TXA(getter, setter, address, length, value, cycles)
 	case opTXS:
-		return TXS(addressMode, length, value, cycles)
+		return TXS(getter, setter, address, length, value, cycles)
 	case opTYA:
-		return TYA(addressMode, length, value, cycles)
+		return TYA(getter, setter, address, length, value, cycles)
 	default:
-		return NOP(addressMode, length, value, cycles)
+		return NOP(getter, setter, address, length, value, cycles)
 	}
 }

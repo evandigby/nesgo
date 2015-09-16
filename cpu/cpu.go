@@ -48,7 +48,7 @@ func (c *CPU) loadRom(r rom.ROM) {
 	c.State.Opcodes = make([]*Opcode, len(c.State.Memory))
 	c.State.Executers = make([]Executer, len(c.State.Memory))
 	for i, _ := range c.State.Memory {
-		op := NewOpcode(c.State.Memory, i)
+		op := NewOpcode(c.State.Memory, uint16(i))
 		if op != nil {
 			c.State.Opcodes[i] = op
 			c.State.Executers[i] = op.Executer()
@@ -240,11 +240,11 @@ func (s *State) Reset() {
 	s.Interrupt = true
 }
 
-func calculateRelativeAddress(instructionLength, offset, pc uint16) uint16 {
+func calculateRelativeAddress(instructionLength, offset, pc uint16) (uint16, bool) {
 	if offset&0x80 == 0 {
-		return pc + instructionLength + (offset & 0x7F)
+		return pc + instructionLength + (offset & 0x7F), false
 	} else {
-		return pc - (offset & 0x7F)
+		return pc - (offset & 0x7F), false
 	}
 }
 
@@ -288,10 +288,127 @@ func (s *State) CalculateAddress(addressMode int, instructionLength, offset uint
 		msb := *s.Memory[byte(offset)+1]
 		return ((uint16(msb) << 8) | uint16(*s.Memory[lsb])) + uint16(s.Y), false
 	case AddressRelative:
-		return calculateRelativeAddress(instructionLength, offset, s.PC), false
+		return calculateRelativeAddress(instructionLength, offset, s.PC)
 	}
 
 	return 0, false
+}
+
+type Getter func(s *State) (value byte, pageCrossed bool)
+type Setter func(s *State, value byte) bool
+
+func getGetter(addressMode int, address, instructionLength, operand uint16) Getter {
+	switch addressMode {
+	case AddressImmediate:
+		return func(s *State) (value byte, pageCrossed bool) { return byte(operand), false }
+	case AddressAccumulator:
+		return func(s *State) (value byte, pageCrossed bool) { return s.A, false }
+	case AddressImplied:
+		return func(s *State) (value byte, pageCrossed bool) { return 0, false } // Not sure why we should ever get here
+	case AddressZeroPage:
+		addr := byte(operand)
+		return func(s *State) (value byte, pageCrossed bool) { return *s.Memory[addr], false }
+	case AddressAbsolute, AddressAddress:
+		return func(s *State) (value byte, pageCrossed bool) { return *s.Memory[operand], false }
+	case AddressZeroPageX:
+		return func(s *State) (value byte, pageCrossed bool) { return *s.Memory[byte(operand)+s.X], false }
+	case AddressZeroPageY:
+		return func(s *State) (value byte, pageCrossed bool) { return *s.Memory[byte(operand)+s.Y], false }
+	case AddressAbsoluteX:
+		return func(s *State) (value byte, pageCrossed bool) { return *s.Memory[operand+uint16(s.X)], false }
+	case AddressAbsoluteY:
+		return func(s *State) (value byte, pageCrossed bool) { return *s.Memory[operand+uint16(s.Y)], false }
+	case AddressIndirect:
+		return func(s *State) (value byte, pageCrossed bool) {
+			return *s.Memory[(uint16(*s.Memory[operand+1])<<8)|uint16(*s.Memory[operand])], false
+		}
+	case AddressIndirectX:
+		return func(s *State) (value byte, pageCrossed bool) {
+			lsb := byte(operand) + s.X
+			msb := lsb + 1
+			return *s.Memory[(uint16(*s.Memory[msb])<<8)|uint16(*s.Memory[lsb])], false
+		}
+	case AddressIndirectY:
+		return func(s *State) (value byte, pageCrossed bool) {
+			lsb := *s.Memory[byte(operand)]
+			msb := *s.Memory[byte(operand)+1]
+			return *s.Memory[((uint16(msb)<<8)|uint16(*s.Memory[lsb]))+uint16(s.Y)], false
+		}
+	case AddressRelative:
+		addr, c := calculateRelativeAddress(instructionLength, operand, address)
+		return func(s *State) (value byte, pageCrossed bool) { return *s.Memory[addr], c }
+	default:
+		return func(s *State) (value byte, pageCrossed bool) { return 0, false }
+
+	}
+}
+
+func getSetter(addressMode int, address, instructionLength, operand uint16) Setter {
+	switch addressMode {
+	case AddressAccumulator:
+		return func(s *State, value byte) bool {
+			s.A = value
+			return false
+		}
+	case AddressZeroPage:
+		addr := byte(operand)
+		return func(s *State, value byte) bool {
+			*s.Memory[addr] = value
+			return false
+		}
+	case AddressAbsolute, AddressAddress:
+		return func(s *State, value byte) bool {
+			*s.Memory[operand] = value
+			return false
+		}
+	case AddressZeroPageX:
+		return func(s *State, value byte) bool {
+			*s.Memory[byte(operand)+s.X] = value
+			return false
+		}
+	case AddressZeroPageY:
+		return func(s *State, value byte) bool {
+			*s.Memory[byte(operand)+s.Y] = value
+			return false
+		}
+	case AddressAbsoluteX:
+		return func(s *State, value byte) bool {
+			*s.Memory[operand+uint16(s.X)] = value
+			return false
+		}
+	case AddressAbsoluteY:
+		return func(s *State, value byte) bool {
+			*s.Memory[operand+uint16(s.Y)] = value
+			return false
+		}
+	case AddressIndirect:
+		return func(s *State, value byte) bool {
+			*s.Memory[(uint16(*s.Memory[operand+1])<<8)|uint16(*s.Memory[operand])] = value
+			return false
+		}
+	case AddressIndirectX:
+		return func(s *State, value byte) bool {
+			lsb := byte(operand) + s.X
+			msb := lsb + 1
+			*s.Memory[(uint16(*s.Memory[msb])<<8)|uint16(*s.Memory[lsb])] = value
+			return false
+		}
+	case AddressIndirectY:
+		return func(s *State, value byte) bool {
+			lsb := *s.Memory[byte(operand)]
+			msb := *s.Memory[byte(operand)+1]
+			*s.Memory[((uint16(msb)<<8)|uint16(*s.Memory[lsb]))+uint16(s.Y)] = value
+			return false
+		}
+	case AddressRelative:
+		addr, c := calculateRelativeAddress(instructionLength, operand, address)
+		return func(s *State, value byte) bool {
+			*s.Memory[addr] = value
+			return c
+		}
+	default:
+		return func(s *State, value byte) bool { return false }
+	}
 }
 
 func (s *State) GetValue(addressMode int, instructionLength, offset uint16) (value byte, pageCrossed bool) {
@@ -309,19 +426,5 @@ func (s *State) GetValue(addressMode int, instructionLength, offset uint16) (val
 		} else {
 			return 0, c
 		}
-	}
-}
-
-func (s *State) SetValue(addressMode int, instructionLength, offset uint16, val byte) bool {
-	switch addressMode {
-	case AddressAccumulator:
-		s.A = val
-		return false
-	default:
-		v, c := s.CalculateAddress(addressMode, instructionLength, offset)
-		if v >= 0 && v < uint16(len(s.Memory)) {
-			*s.Memory[v] = val
-		}
-		return c
 	}
 }

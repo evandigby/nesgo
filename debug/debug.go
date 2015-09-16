@@ -154,7 +154,7 @@ func (d *Debugger) disassembly(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		o := cpu.NewOpcode(d.cpuState.Memory, int(i))
+		o := cpu.NewOpcode(d.cpuState.Memory, uint16(i))
 		if o == nil {
 			disasm = append(disasm, Disassembly{strconv.FormatInt(int64(i), 16), "Unable to parse opcode"})
 			break
