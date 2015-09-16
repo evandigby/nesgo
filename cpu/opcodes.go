@@ -16,19 +16,32 @@ type Opcode struct {
 	opcode      []*byte
 	addressMode int
 	instruction string
-	operands    string
 	cycles      int
 	executer    Executer
 }
 
-func (o *Opcode) Address() int        { return o.address }
-func (o *Opcode) Operands() string    { return o.operands }
+func (o *Opcode) Address() int     { return o.address }
+func (o *Opcode) AddressMode() int { return o.addressMode }
+func (o *Opcode) Operand() uint16  { return getValue(o.opcode) }
+func (o *Opcode) Operands() string {
+	value := getValue(o.opcode)
+	operands := getOperands(o.addressMode, o.address, uint16(len(o.opcode)), value)
+	return operands
+}
 func (o *Opcode) Opcode() []*byte     { return o.opcode }
 func (o *Opcode) Executer() Executer  { return o.executer }
 func (o *Opcode) Instruction() string { return o.instruction }
 func (o *Opcode) Cycles() int         { return o.cycles }
+func (o *Opcode) Bytes() string {
+	op := ""
+	for _, v := range o.opcode {
+		op += fmt.Sprintf("%02X ", *v)
+	}
+
+	return strings.TrimSpace(op)
+}
 func (o *Opcode) Disassemble() string {
-	return strings.TrimSpace(fmt.Sprintf("%v %v", o.instruction, o.operands))
+	return strings.TrimSpace(fmt.Sprintf("%v %v", o.instruction, o.Operands()))
 }
 
 func NewOpcode(memory []*byte, address int) *Opcode {
@@ -49,7 +62,6 @@ func NewOpcode(memory []*byte, address int) *Opcode {
 		opcode,
 		addressMode,
 		instruction,
-		getOperands(addressMode, value),
 		cycles,
 		getExecuter(instruction, opcode, addressMode, value, cycles),
 	}
@@ -88,26 +100,32 @@ func getValue(opcode []*byte) uint16 {
 	}
 }
 
-func getOperands(addressMode int, operand uint16) string {
+func getOperands(addressMode int, address int, instructionLength, operand uint16) string {
+	f := "%02X"
+	if instructionLength == 3 {
+		f = "%04X"
+	}
 	switch addressMode {
 	case AddressImplied:
 		return ""
 	case AddressAccumulator:
 		return "A"
-	case AddressRelative, AddressZeroPage, AddressAbsolute:
-		return fmt.Sprintf("$%X", operand)
+	case AddressRelative:
+		return fmt.Sprintf(fmt.Sprintf("$%s", f), calculateRelativeAddress(instructionLength, operand, uint16(address)))
+	case AddressZeroPage, AddressAbsolute, AddressAddress:
+		return fmt.Sprintf(fmt.Sprintf("$%s", f), operand)
 	case AddressZeroPageX, AddressAbsoluteX:
-		return fmt.Sprintf("$%X, X", operand)
+		return fmt.Sprintf(fmt.Sprintf("$%s, X", f), operand)
 	case AddressZeroPageY, AddressAbsoluteY:
-		return fmt.Sprintf("$%X, Y", operand)
+		return fmt.Sprintf(fmt.Sprintf("$%s, Y", f), operand)
 	case AddressImmediate:
-		return fmt.Sprintf("#$%X", operand)
+		return fmt.Sprintf(fmt.Sprintf("#$%s", f), operand)
 	case AddressIndirectX:
-		return fmt.Sprintf("($%X, X)", operand)
+		return fmt.Sprintf(fmt.Sprintf("($%s, X)", f), operand)
 	case AddressIndirectY:
-		return fmt.Sprintf("($%X, Y)", operand)
+		return fmt.Sprintf(fmt.Sprintf("($%s, Y)", f), operand)
 	case AddressIndirect:
-		return fmt.Sprintf("($%X)", operand)
+		return fmt.Sprintf(fmt.Sprintf("($%s)", f), operand)
 	}
 
 	// Should never get here
@@ -117,9 +135,11 @@ func getOperands(addressMode int, operand uint16) string {
 func getAddressMode(op byte) int {
 	// Exceptions to the rules
 	switch op {
+	case 0x20, 0x4C:
+		return AddressAddress
 	case 0x00, 0x60:
 		return AddressImplied
-	case 0x20, 0x40, 0x80:
+	case 0x40, 0x80:
 		return AddressAbsolute
 	case 0xA0, 0xC0, 0xE0:
 		return AddressImmediate
@@ -188,6 +208,7 @@ func getOpcode(memory []*byte, address int, addressMode int) []*byte {
 		}
 
 	case AddressAbsolute,
+		AddressAddress,
 		AddressAbsoluteX,
 		AddressAbsoluteY,
 		AddressIndirect:

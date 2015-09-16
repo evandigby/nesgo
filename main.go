@@ -14,8 +14,7 @@ import (
 )
 
 func main() {
-	old := runtime.GOMAXPROCS(4)
-	fmt.Printf("Old: %v\n", old)
+	runtime.GOMAXPROCS(4)
 	if len(os.Args) < 2 {
 		fmt.Printf("Not enough args\n")
 		return
@@ -60,13 +59,12 @@ func main() {
 		defer wg.Done()
 		for {
 			reader := bufio.NewReader(os.Stdin)
-			fmt.Print("> ")
 			text, _ := reader.ReadString('\n')
 			switch text {
 			case "quit\n":
 				clock.Stop()
 				return
-			case "step\n":
+			case "step\n", "\n":
 				clock.Step()
 			case "pause\n":
 				clock.Pause()

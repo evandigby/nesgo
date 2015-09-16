@@ -22,8 +22,11 @@ var cycleExceptions = map[string]map[int]int{
 		AddressAbsolute:  6,
 		AddressAbsoluteX: 7,
 	},
+	opJMP: map[int]int{
+		AddressAddress: 3,
+	},
 	opJSR: map[int]int{
-		AddressAbsolute: 6,
+		AddressAddress: 6,
 	},
 	opLSR: map[int]int{
 		AddressZeroPage:  5,
@@ -99,6 +102,7 @@ func getCycles(instruction string, addressMode int) int {
 	case AddressIndirect:
 		return 5
 	}
+	// AddressAddress Only in exceptions (2 cases)
 
 	if m, ok := cycleExceptions[instruction]; ok {
 		if c, ok := m[addressMode]; ok {

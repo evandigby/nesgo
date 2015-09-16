@@ -1,6 +1,11 @@
 package cpu
 
-import "github.com/evandigby/nesgo/rom"
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/evandigby/nesgo/rom"
+)
 
 const (
 	AddressImmediate int = iota
@@ -16,17 +21,19 @@ const (
 	AddressIndirectX
 	AddressIndirectY
 	AddressRelative
+	AddressAddress
 )
 
 type CPU struct {
 	State *State
 	rom   rom.ROM
 
-	Sync chan int
+	nintendulatorLog bool
+	Sync             chan int
 }
 
 func NewCPU(r rom.ROM) *CPU {
-	return &CPU{NewState(), r, make(chan int)}
+	return &CPU{NewState(), r, true, make(chan int)}
 }
 
 func (c *CPU) loadRom(r rom.ROM) {
@@ -49,13 +56,45 @@ func (c *CPU) loadRom(r rom.ROM) {
 	}
 }
 
+func (c *CPU) getValueAt(addressMode int, instructionLength, operand uint16) string {
+
+	intermediateAddress := c.State.CalculateIntermediateAddress(addressMode, instructionLength, operand)
+	address, _ := c.State.CalculateAddress(addressMode, instructionLength, operand)
+	value, _ := c.State.GetValue(addressMode, instructionLength, operand)
+
+	switch addressMode {
+	case AddressZeroPage:
+		return fmt.Sprintf("= %02X", value)
+	case AddressZeroPageX, AddressZeroPageY:
+		return fmt.Sprintf("@ %02X = %02X", address, value)
+	case AddressIndirectX, AddressIndirectY:
+		return fmt.Sprintf("@ %02X = %04X = %02X", intermediateAddress, address, value)
+	case AddressAbsolute, AddressAbsoluteX, AddressAbsoluteY:
+		return fmt.Sprintf("@ %04X = %02X", address, value)
+	case AddressIndirect:
+		return fmt.Sprintf("= %04X", address)
+	default:
+		return ""
+	}
+}
+
 func (c *CPU) execute() {
 	c.loadRom(c.rom)
+	c.State.PowerUp()
 	c.State.PC = 0xC000
 
+	cs := 0
 	for {
 		<-c.Sync
+		if c.nintendulatorLog {
+			op := c.State.Opcodes[c.State.PC]
+			disassembly := fmt.Sprintf("%v %v", op.Disassemble(), c.getValueAt(op.AddressMode(), uint16(len(op.Opcode())), op.Operand()))
+			ppuc := (cs * 3) % 341
+			fmt.Printf("%04X  %-9s %-31s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3s\n", c.State.PC, op.Bytes(), disassembly, c.State.A, c.State.X, c.State.Y, c.State.Status(), c.State.SP, strconv.FormatInt(int64(ppuc), 10))
+
+		}
 		cycles, pc := c.State.Executers[c.State.PC](c.State)
+		cs += cycles
 		c.State.PC = pc
 
 		c.Sync <- cycles
@@ -156,7 +195,7 @@ func NewState() *State {
 		}
 	}
 	// Make stack helper
-	s := m[0x0100:0xFFFF] //m[0x0100:0x01FF]
+	s := m[0x0100:0x200] //m[0x0100:0x01FF]
 
 	// PPU Register helper
 	ppu := m[0x2000:0x2007]
@@ -170,7 +209,7 @@ func NewState() *State {
 	}
 
 	// APU Register helper
-	apu := m[0x4000:0x401F]
+	apu := m[0x4000:0x4020]
 
 	// Cartridge Memory helper
 	c := m[0x8000:0x10000]
@@ -193,6 +232,7 @@ func (s *State) PowerUp() {
 	s.X = 0
 	s.Y = 0
 	s.SP = 0xFD
+	s.Interrupt = true
 }
 
 func (s *State) Reset() {
@@ -200,11 +240,34 @@ func (s *State) Reset() {
 	s.Interrupt = true
 }
 
+func calculateRelativeAddress(instructionLength, offset, pc uint16) uint16 {
+	if offset&0x80 == 0 {
+		return pc + instructionLength + (offset & 0x7F)
+	} else {
+		return pc - (offset & 0x7F)
+	}
+}
+
+func (s *State) CalculateIntermediateAddress(addressMode int, instructionLength, offset uint16) uint16 {
+	switch addressMode {
+	case AddressIndirect:
+		return offset
+	case AddressIndirectX:
+		return uint16(byte(offset) + s.X)
+	case AddressIndirectY:
+		lsb := *s.Memory[byte(offset)]
+		msb := *s.Memory[byte(offset)+byte(1)]
+		return (uint16(msb) << 8) | uint16(*s.Memory[lsb])
+	}
+
+	return 0
+}
+
 func (s *State) CalculateAddress(addressMode int, instructionLength, offset uint16) (address uint16, pageCrossed bool) {
 	switch addressMode {
 	case AddressZeroPage:
 		return uint16(byte(offset)), false
-	case AddressAbsolute:
+	case AddressAbsolute, AddressAddress:
 		return offset, false
 	case AddressZeroPageX:
 		return uint16(byte(offset) + s.X), false
@@ -225,11 +288,7 @@ func (s *State) CalculateAddress(addressMode int, instructionLength, offset uint
 		msb := *s.Memory[byte(offset)+1]
 		return ((uint16(msb) << 8) | uint16(*s.Memory[lsb])) + uint16(s.Y), false
 	case AddressRelative:
-		if offset&0x80 == 0 {
-			return s.PC + instructionLength + (offset & 0x7F), false
-		} else {
-			return s.PC - (offset & 0x7F), false
-		}
+		return calculateRelativeAddress(instructionLength, offset, s.PC), false
 	}
 
 	return 0, false

@@ -1,0 +1,19 @@
+table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 5px;
+}
+
+table, th, td {
+	border: 1px solid black;	
+	text-align: center;
+}
+
+#DisassemblyTable td {
+	text-align: left;
+}
+
+#DisassemblyTable td, th {
+	border-left: 0px;
+	border-right: 0px;
+}

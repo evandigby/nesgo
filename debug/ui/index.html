@@ -1,12 +1,13 @@
 <html>
 <head>
 	<title>Nesgo Debug UI</title>
+	<link rel="stylesheet" type="text/css" href="styles.css">
 	<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
 	<script type="text/javascript">
 		var updateInterval;
 
 		var memoryOffsetStart = 0x2000;
-		var memoryOffsetEnd = 0x20FF;
+		var memoryOffsetEnd = 0x2100;
 
 		function step() {
 			$.ajax({
@@ -48,40 +49,45 @@
 
 
 		function updateMemoryTable(tablename, title, data, offset) {
-			var coloff = 0;
-			var rowoff = 0;
-
 			var table = document.createElement('table');
 			table.id = tablename;
-			table.width = "100%";
-			table.border = 1;
 			var row = document.createElement('tr');   
 			var td = document.createElement('th');
-			td.colSpan = '18';
+			td.colSpan = '17';
 			var val = document.createTextNode(title);
 			td.appendChild(val);
 			row.appendChild(td);
+			table.appendChild(row)
+
+			row = document.createElement('tr'); 
+			td = document.createElement('th');
+			val = document.createTextNode('');
+			td.appendChild(val);
+			row.appendChild(td);
+			
+			for (i=0;i<16;++i) {
+				td = document.createElement('th');
+				val = document.createTextNode(i.toString(16));
+				td.appendChild(val);
+				row.appendChild(td);
+			}
+
+			var x = 0;
 			$.each(data, function(i, v) {
-				if (coloff == 0) {
+				if (x % 16 == 0) {
 					table.appendChild(row)
 					row = document.createElement('tr');   
-					var td = document.createElement('th');
-					var val = document.createTextNode((offset + rowoff).toString(16));
+					td = document.createElement('th');
+					val = document.createTextNode((offset + x).toString(16));
 					td.appendChild(val);
 					row.appendChild(td);
-				}
-
-				var td = document.createElement('td');
-				var val = document.createTextNode(v.toString(16));
+				} 
+				td = document.createElement('td');
+				val = document.createTextNode(v.toString(16));
 				td.appendChild(val);
 				row.appendChild(td)
 
-				if (coloff >= 16) {
-					rowoff = rowoff + coloff;
-					coloff = 0
-				} else {
-					coloff += 1;
-				}
+				x = x + 1
 			})
 
 			table.appendChild(row)
@@ -103,9 +109,8 @@
 		function updateStack() {
 			$.getJSON("http://localhost:9905/stack", {
 				start: 0, 
-				end: 0xFF
 			},
-			function(data) { updateMemoryTable('StackTable', 'Stack', data, 0); })
+			function(data) { updateMemoryTable('StackTable', 'Stack', data, 0x0100); })
 			.fail(function() {
 				clearInterval(updateInterval)
 			});
@@ -118,8 +123,6 @@
 
 				var table = document.createElement('table');
 				table.id = tablename;
-				table.width = "100%";
-				table.border = 1;
 				var row = document.createElement('tr');   
 				var td = document.createElement('th');
 				td.colSpan = '2';
@@ -174,7 +177,7 @@
 	</div>
 	<h1>State</h1>
 	<div id="cpustate">
-		<table width="100%">
+		<table id="CpuStateTable">
 			<tr><th colspan="7">CPU State Flags</th></tr>
 			<tr>
 				<th>Carry</th>
@@ -195,7 +198,7 @@
 				<td id="Sign"></td>
 			</tr>
 		</table>
-		<table width="100%">
+		<table>
 			<tr>
 				<th colspan="5">CPU Registers</th>
 			</tr>
@@ -216,13 +219,13 @@
 		</table>
 	</div>
 	<div id="Disassembly">
-		<table width="100%" id="DisassemblyTable"></table>
+		<table id="DisassemblyTable"></table>
 	</div>
 	<div id="Stack">
-		<table width="100%" id="StackTable"></table>
+		<table id="StackTable"></table>
 	</div>
 	<div id="Memory">
-		<table width="100%" id="MemoryTable"></table>
+		<table id="MemoryTable"></table>
 	</div>
 </body>
 </html>
