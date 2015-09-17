@@ -351,6 +351,8 @@ func PHP(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 func PLA(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		s.A = s.Pop()
+		s.SetZero(s.A)
+		s.SetSign(s.A)
 		return cycles, s.PC + instructionLength
 	}
 }
