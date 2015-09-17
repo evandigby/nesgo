@@ -79,7 +79,7 @@ func BCS(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 func BEQ(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
-		return branch(!s.Zero, s, v, c, instructionLength, operand, cycles)
+		return branch(s.Zero, s, v, c, instructionLength, operand, cycles)
 	}
 }
 func BIT(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
@@ -92,7 +92,7 @@ func BIT(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		r := s.A & byte(v)
 		s.SetZero(r)
 		s.Overflow = r&0x40 != 0
-		s.Sign = r&0x80 != 0
+		s.SetSign(r)
 
 		return cycles, s.PC + instructionLength
 	}
@@ -100,7 +100,7 @@ func BIT(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 func BMI(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
-		return branch(s.Sign, s, v, c, instructionLength, operand, cycles)
+		return branch(s.Negative, s, v, c, instructionLength, operand, cycles)
 	}
 }
 
@@ -113,7 +113,7 @@ func BNE(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 func BPL(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
-		return branch(!s.Sign, s, v, c, instructionLength, operand, cycles)
+		return branch(!s.Negative, s, v, c, instructionLength, operand, cycles)
 	}
 }
 func BRK(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
@@ -265,7 +265,7 @@ func JMP(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 }
 func JSR(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		v := s.PC - 1
+		v := s.PC + instructionLength
 		s.Push(byte(v >> 8))
 		s.Push(byte(v))
 		return cycles, operand
@@ -344,7 +344,7 @@ func PHA(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 }
 func PHP(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		s.Push(s.Status())
+		s.Push(s.Status() | 16)
 		return cycles, s.PC + instructionLength
 	}
 }

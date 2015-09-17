@@ -35,6 +35,16 @@ func main() {
 		return
 	}
 
+	var cpuLog *os.File
+	if len(os.Args) > 2 {
+		cpuLog, err = os.Create(os.Args[2])
+		if err != nil {
+			fmt.Printf("Unable to create log %v\n", err)
+			return
+		}
+		defer cpuLog.Close()
+	}
+
 	ppu := make(chan int)
 
 	go func() {
@@ -43,11 +53,20 @@ func main() {
 		}
 	}()
 
-	nesCPU := cpu.NewCPU(ines)
+	exit := make(chan bool)
+
+	nesCPU := cpu.NewCPU(ines, exit, cpuLog)
 	clock := clock.NewClock(21477272, nesCPU.Sync, ppu)
-	clock.Pause()
+	if cpuLog == nil {
+		clock.Pause()
+	}
 	clock.Run()
 	nesCPU.Run()
+
+	go func() {
+		<-exit
+		clock.Pause()
+	}()
 
 	debugger := debug.NewDebugger(nesCPU.State, clock, "./debug/ui/")
 	debugger.Start()

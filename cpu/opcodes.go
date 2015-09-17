@@ -18,6 +18,8 @@ type Opcode struct {
 	instruction string
 	cycles      int
 	executer    Executer
+	getter      Getter
+	setter      Setter
 }
 
 func (o *Opcode) Address() uint16  { return o.address }
@@ -32,6 +34,11 @@ func (o *Opcode) Opcode() []*byte     { return o.opcode }
 func (o *Opcode) Executer() Executer  { return o.executer }
 func (o *Opcode) Instruction() string { return o.instruction }
 func (o *Opcode) Cycles() int         { return o.cycles }
+func (o *Opcode) Get(s *State) byte {
+	v, _ := o.getter(s)
+	return v
+}
+
 func (o *Opcode) Bytes() string {
 	op := ""
 	for _, v := range o.opcode {
@@ -50,12 +57,16 @@ func NewOpcode(memory []*byte, address uint16) *Opcode {
 	addressMode := getAddressMode(op)
 
 	opcode := getOpcode(memory, address, addressMode)
-	if len(opcode) == 0 {
+	l := uint16(len(opcode))
+	if l == 0 {
 		return nil
 	}
 	instruction := getInstruction(op)
 	cycles := getCycles(instruction, addressMode)
 	value := getValue(opcode)
+
+	getter := getGetter(addressMode, address, l, value)
+	setter := getSetter(addressMode, address, l, value)
 
 	return &Opcode{
 		address,
@@ -63,7 +74,9 @@ func NewOpcode(memory []*byte, address uint16) *Opcode {
 		addressMode,
 		instruction,
 		cycles,
-		getExecuter(instruction, opcode, addressMode, address, value, cycles),
+		getExecuter(instruction, opcode, addressMode, address, value, cycles, getter, setter),
+		getter,
+		setter,
 	}
 }
 
@@ -224,10 +237,8 @@ func getOpcode(memory []*byte, address uint16, addressMode int) []*byte {
 	return []*byte{}
 }
 
-func getExecuter(instruction string, opcode []*byte, addressMode int, address, value uint16, cycles int) Executer {
+func getExecuter(instruction string, opcode []*byte, addressMode int, address, value uint16, cycles int, getter Getter, setter Setter) Executer {
 	length := uint16(len(opcode))
-	getter := getGetter(addressMode, address, length, value)
-	setter := getSetter(addressMode, address, length, value)
 	switch instruction {
 	case opADC:
 		return ADC(getter, setter, address, length, value, cycles)

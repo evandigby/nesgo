@@ -6,8 +6,8 @@
 	<script type="text/javascript">
 		var updateInterval;
 
-		var memoryOffsetStart = 0x2000;
-		var memoryOffsetEnd = 0x2100;
+		var memoryOffsetStart = 0x0000;
+		var memoryOffsetEnd = 0x0100;
 
 		function step() {
 			$.ajax({
@@ -34,7 +34,7 @@
 			        	$("#Decimal").text(data.Decimal)
 			        	$("#Break").text(data.Break)
 			        	$("#Overflow").text(data.Overflow)
-			        	$("#Sign").text(data.Sign)
+			        	$("#Negative").text(data.Negative)
 
 			        	$("#PC").text(data.PC.toString(16))
 			        	$("#A").text(data.A.toString(16))
@@ -46,7 +46,6 @@
 				clearInterval(updateInterval)
 			});
 		}
-
 
 		function updateMemoryTable(tablename, title, data, offset) {
 			var table = document.createElement('table');
@@ -67,7 +66,7 @@
 			
 			for (i=0;i<16;++i) {
 				td = document.createElement('th');
-				val = document.createTextNode(i.toString(16));
+				val = document.createTextNode(((i + (offset & 0x000F)) % 16).toString(16));
 				td.appendChild(val);
 				row.appendChild(td);
 			}
@@ -100,7 +99,9 @@
 				start: memoryOffsetStart.toString(16), 
 				end: memoryOffsetEnd.toString(16)
 			},
-			function(data){ updateMemoryTable('MemoryTable', 'Memory', data, memoryOffsetStart); })
+			function(data){ 
+				updateMemoryTable('MemoryTable', 'Memory', data, memoryOffsetStart); 
+			})
 			.fail(function() {
 				clearInterval(updateInterval)
 			});
@@ -171,6 +172,8 @@
 	</script>
 </head>
 <body>
+
+
 	<h1>Controls</h1>
 	<div id="controls">
 		<input id="step" type="button" value="Step" />
@@ -186,7 +189,7 @@
 				<th>Decimal</th>
 				<th>Break</th>
 				<th>Overflow</th>
-				<th>Sign</th>
+				<th>Negative</th>
 			</tr>
 			<tr>
 				<td id="Carry"></td>
@@ -195,7 +198,7 @@
 				<td id="Decimal"></td>
 				<td id="Break"></td>
 				<td id="Overflow"></td>
-				<td id="Sign"></td>
+				<td id="Negative"></td>
 			</tr>
 		</table>
 		<table>

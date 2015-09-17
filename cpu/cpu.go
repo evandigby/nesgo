@@ -2,6 +2,7 @@ package cpu
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/evandigby/nesgo/rom"
@@ -29,11 +30,13 @@ type CPU struct {
 	rom   rom.ROM
 
 	nintendulatorLog bool
+	cpuLog           *os.File
 	Sync             chan int
+	exit             chan bool
 }
 
-func NewCPU(r rom.ROM) *CPU {
-	return &CPU{NewState(), r, true, make(chan int)}
+func NewCPU(r rom.ROM, exit chan bool, log *os.File) *CPU {
+	return &CPU{NewState(), r, true, log, make(chan int), exit}
 }
 
 func (c *CPU) loadRom(r rom.ROM) {
@@ -56,11 +59,10 @@ func (c *CPU) loadRom(r rom.ROM) {
 	}
 }
 
-func (c *CPU) getValueAt(addressMode int, instructionLength, operand uint16) string {
+func (c *CPU) getValueAt(addressMode int, instructionLength, operand uint16, value byte) string {
 
 	intermediateAddress := c.State.CalculateIntermediateAddress(addressMode, instructionLength, operand)
 	address, _ := c.State.CalculateAddress(addressMode, instructionLength, operand)
-	value, _ := c.State.GetValue(addressMode, instructionLength, operand)
 
 	switch addressMode {
 	case AddressZeroPage:
@@ -84,14 +86,22 @@ func (c *CPU) execute() {
 	c.State.PC = 0xC000
 
 	cs := 0
+	instructionsRun := 0
 	for {
 		<-c.Sync
 		if c.nintendulatorLog {
 			op := c.State.Opcodes[c.State.PC]
-			disassembly := fmt.Sprintf("%v %v", op.Disassemble(), c.getValueAt(op.AddressMode(), uint16(len(op.Opcode())), op.Operand()))
+			disassembly := fmt.Sprintf("%v %v", op.Disassemble(), c.getValueAt(op.AddressMode(), uint16(len(op.Opcode())), op.Operand(), op.Get(c.State)))
 			ppuc := (cs * 3) % 341
-			fmt.Printf("%04X  %-9s %-31s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3s\n", c.State.PC, op.Bytes(), disassembly, c.State.A, c.State.X, c.State.Y, c.State.Status(), c.State.SP, strconv.FormatInt(int64(ppuc), 10))
-
+			log := fmt.Sprintf("%04X  %-9s %-31s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3s\n", c.State.PC, op.Bytes(), disassembly, c.State.A, c.State.X, c.State.Y, c.State.Status(), c.State.SP, strconv.FormatInt(int64(ppuc), 10))
+			fmt.Print(log)
+			if c.cpuLog != nil {
+				c.cpuLog.WriteString(log)
+			}
+			instructionsRun++
+			if instructionsRun >= 8991 {
+				c.exit <- true
+			}
 		}
 		cycles, pc := c.State.Executers[c.State.PC](c.State)
 		cs += cycles
@@ -112,7 +122,7 @@ type Flags struct {
 	Decimal   bool
 	Break     bool
 	Overflow  bool
-	Sign      bool
+	Negative  bool
 }
 
 func (f *Flags) Status() byte {
@@ -135,7 +145,7 @@ func (f *Flags) Status() byte {
 	if f.Overflow {
 		v |= 64
 	}
-	if f.Sign {
+	if f.Negative {
 		v |= 128
 	}
 
@@ -149,11 +159,11 @@ func (f *Flags) SetStatus(v byte) {
 	f.Decimal = v&8 != 0
 	f.Break = v&16 != 0
 	f.Overflow = v&64 != 0
-	f.Sign = v&128 != 0
+	f.Negative = v&128 != 0
 }
 
 func (f *Flags) SetSign(value byte) {
-	f.Sign = value&0x80 != 0
+	f.Negative = value&0x80 != 0
 }
 
 func (f *Flags) SetZero(value byte) {
@@ -218,16 +228,16 @@ func NewState() *State {
 
 func (s *State) Push(val byte) {
 	*s.Stack[s.SP] = val
-	s.SP++
+	s.SP--
 }
 
 func (s *State) Pop() byte {
-	s.SP--
+	s.SP++
 	return *s.Stack[s.SP]
 }
 
 func (s *State) PowerUp() {
-	s.PC = 0x34
+	s.PC = uint16(*s.Memory[0xFFFC]) | (uint16(*s.Memory[0xFFFD]) << 8)
 	s.A = 0
 	s.X = 0
 	s.Y = 0
@@ -236,6 +246,7 @@ func (s *State) PowerUp() {
 }
 
 func (s *State) Reset() {
+	s.PC = uint16(*s.Memory[0xFFFC]) | (uint16(*s.Memory[0xFFFD]) << 8)
 	s.SP -= 3
 	s.Interrupt = true
 }
@@ -244,7 +255,7 @@ func calculateRelativeAddress(instructionLength, offset, pc uint16) (uint16, boo
 	if offset&0x80 == 0 {
 		return pc + instructionLength + (offset & 0x7F), false
 	} else {
-		return pc - (offset & 0x7F), false
+		return pc + instructionLength - (0x80 - (offset & 0x7F)), false
 	}
 }
 
