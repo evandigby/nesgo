@@ -35,7 +35,7 @@ func main() {
 		return
 	}
 
-	var cpuLog *os.File
+	var cpuLog, nesLog *os.File
 	if len(os.Args) > 2 {
 		cpuLog, err = os.Create(os.Args[2])
 		if err != nil {
@@ -43,6 +43,15 @@ func main() {
 			return
 		}
 		defer cpuLog.Close()
+	}
+
+	nesLog, err = os.Open("nestest.log")
+
+	if err != nil {
+		fmt.Printf("Unable to open nestest.log %v\n", err)
+		nesLog = nil
+	} else {
+		defer nesLog.Close()
 	}
 
 	ppu := make(chan int)
@@ -55,7 +64,7 @@ func main() {
 
 	exit := make(chan bool)
 
-	nesCPU := cpu.NewCPU(ines, exit, cpuLog)
+	nesCPU := cpu.NewCPU(ines, exit, cpuLog, nesLog)
 	clock := clock.NewClock(21477272, nesCPU.Sync, ppu)
 	if cpuLog == nil {
 		clock.Pause()

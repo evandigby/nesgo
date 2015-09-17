@@ -91,8 +91,8 @@ func BIT(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 
 		r := s.A & byte(v)
 		s.SetZero(r)
-		s.Overflow = r&0x40 != 0
-		s.SetSign(r)
+		s.Overflow = byte(v)&0x40 != 0
+		s.SetSign(byte(v))
 
 		return cycles, s.PC + instructionLength
 	}
@@ -358,7 +358,7 @@ func PLA(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 }
 func PLP(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		s.SetStatus(s.Pop())
+		s.SetStatus(s.Pop() & 0xEF)
 		return cycles, s.PC + instructionLength
 	}
 }

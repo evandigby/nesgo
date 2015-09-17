@@ -1,6 +1,7 @@
 package cpu
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strconv"
@@ -31,12 +32,13 @@ type CPU struct {
 
 	nintendulatorLog bool
 	cpuLog           *os.File
+	nesLog           *bufio.Reader
 	Sync             chan int
 	exit             chan bool
 }
 
-func NewCPU(r rom.ROM, exit chan bool, log *os.File) *CPU {
-	return &CPU{NewState(), r, true, log, make(chan int), exit}
+func NewCPU(r rom.ROM, exit chan bool, log, nesLog *os.File) *CPU {
+	return &CPU{NewState(), r, true, log, bufio.NewReader(nesLog), make(chan int), exit}
 }
 
 func (c *CPU) loadRom(r rom.ROM) {
@@ -87,6 +89,7 @@ func (c *CPU) execute() {
 
 	cs := 0
 	instructionsRun := 0
+	var nesLogLine string
 	for {
 		<-c.Sync
 		if c.nintendulatorLog {
@@ -94,9 +97,24 @@ func (c *CPU) execute() {
 			disassembly := fmt.Sprintf("%v %v", op.Disassemble(), c.getValueAt(op.AddressMode(), uint16(len(op.Opcode())), op.Operand(), op.Get(c.State)))
 			ppuc := (cs * 3) % 341
 			log := fmt.Sprintf("%04X  %-9s %-31s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3s\n", c.State.PC, op.Bytes(), disassembly, c.State.A, c.State.X, c.State.Y, c.State.Status(), c.State.SP, strconv.FormatInt(int64(ppuc), 10))
-			fmt.Print(log)
+			fmt.Printf("%v: %v", instructionsRun, log)
 			if c.cpuLog != nil {
 				c.cpuLog.WriteString(log)
+			}
+
+			if c.nesLog != nil {
+				l, _, err := c.nesLog.ReadLine()
+				if err != nil {
+					panic(err)
+				}
+
+				oldLine := nesLogLine
+				nesLogLine = string(l[0:73])
+				if nesLogLine != log[0:73] {
+					fmt.Printf("%v: %v\n", instructionsRun-1, oldLine)
+					fmt.Printf("%v: %v\n", instructionsRun, nesLogLine)
+					c.exit <- true
+				}
 			}
 			instructionsRun++
 			if instructionsRun >= 8991 {
