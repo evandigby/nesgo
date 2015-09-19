@@ -11,9 +11,9 @@ func ADC(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		if s.Carry {
 			t += 1
 		}
-		s.Carry = t > 0xFF
 		bt := byte(t)
-		s.Overflow = (s.A^v)&(v^bt)&0x80 != 0
+		s.Carry = t > 0xFF
+		s.Overflow = ((((s.A ^ v) & 0x80) == 0) && ((s.A^bt)&0x80) != 0)
 		s.SetZero(bt)
 		s.SetSign(bt)
 		s.A = bt
@@ -45,7 +45,7 @@ func ASL(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		v &= 0xFF
 		s.SetSign(v)
 		s.SetZero(v)
-
+		set(s, v)
 		return cycles, s.PC + instructionLength
 	}
 }
@@ -64,19 +64,19 @@ func branch(b bool, s *State, v uint16, c bool, instructionLength uint16, operan
 	}
 }
 
-func BCC(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+func BCC(address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
 		return branch(!s.Carry, s, v, c, instructionLength, operand, cycles)
 	}
 }
-func BCS(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+func BCS(address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
 		return branch(s.Carry, s, v, c, instructionLength, operand, cycles)
 	}
 }
-func BEQ(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+func BEQ(address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
 		return branch(s.Zero, s, v, c, instructionLength, operand, cycles)
@@ -97,20 +97,20 @@ func BIT(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		return cycles, s.PC + instructionLength
 	}
 }
-func BMI(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+func BMI(address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
 		return branch(s.Negative, s, v, c, instructionLength, operand, cycles)
 	}
 }
 
-func BNE(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+func BNE(address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
 		return branch(!s.Zero, s, v, c, instructionLength, operand, cycles)
 	}
 }
-func BPL(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+func BPL(address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
 		return branch(!s.Negative, s, v, c, instructionLength, operand, cycles)
@@ -124,18 +124,18 @@ func BRK(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		s.Break = true
 		s.Push(s.Status())
 		s.Interrupt = true
-		lsd, _ := s.GetValue(AddressAbsolute, instructionLength, 0xFFFE)
-		msd, _ := s.GetValue(AddressAbsolute, instructionLength, 0xFFFE)
+		lsd := *s.Memory[0xFFFE]
+		msd := *s.Memory[0xFFFF]
 		return cycles, uint16(lsd) | (uint16(msd) << 8)
 	}
 }
-func BVC(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+func BVC(address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
 		return branch(!s.Overflow, s, v, c, instructionLength, operand, cycles)
 	}
 }
-func BVS(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+func BVS(address, instructionLength, operand uint16, cycles int) Executer {
 	v, c := calculateRelativeAddress(instructionLength, operand, address)
 	return func(s *State) (int, uint16) {
 		return branch(s.Overflow, s, v, c, instructionLength, operand, cycles)
@@ -258,17 +258,19 @@ func INY(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		return cycles, s.PC + instructionLength
 	}
 }
-func JMP(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+func JMP(get AddressGetter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		return cycles, operand
+		a := get(s)
+		return cycles, a
 	}
 }
-func JSR(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+func JSR(get AddressGetter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		v := s.PC + instructionLength
+		v := s.PC + instructionLength - 1
 		s.Push(byte(v >> 8))
 		s.Push(byte(v))
-		return cycles, operand
+		a := get(s)
+		return cycles, a
 	}
 }
 func LDA(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
@@ -400,7 +402,8 @@ func RTI(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 }
 func RTS(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		return cycles, uint16(s.Pop()) | (uint16(s.Pop()) << 8)
+		val := (uint16(s.Pop()) | (uint16(s.Pop()) << 8)) + 1
+		return cycles, val
 	}
 }
 func SBC(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
@@ -415,7 +418,7 @@ func SBC(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		}
 		s.Carry = t < 0x100
 		bt := byte(t)
-		s.Overflow = (s.A^v)&(v^bt)&0x80 == 0
+		s.Overflow = ((((s.A ^ v) & 0x80) != 0) && ((s.A^bt)&0x80) != 0)
 		s.SetZero(bt)
 		s.SetSign(bt)
 		s.A = bt
@@ -493,8 +496,6 @@ func TXA(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 func TXS(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		s.SP = s.X
-		s.SetZero(s.SP)
-		s.SetSign(s.SP)
 		return cycles, s.PC + instructionLength
 	}
 }
