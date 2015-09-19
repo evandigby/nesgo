@@ -76,7 +76,7 @@ func (c *CPU) execute() {
 			op := c.State.Opcodes[c.State.PC]
 			disassembly := fmt.Sprintf("%v %v", op.Disassemble(), op.GetValueAt(c.State))
 			ppuc := (cs * 3) % 341
-			log := fmt.Sprintf("%04X  %-9s %-31s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3s\n", c.State.PC, op.Bytes(), disassembly, c.State.A, c.State.X, c.State.Y, c.State.Status(), c.State.SP, strconv.FormatInt(int64(ppuc), 10))
+			log := fmt.Sprintf("%04X  %-8s %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3s\n", c.State.PC, op.Bytes(), disassembly, c.State.A, c.State.X, c.State.Y, c.State.Status(), c.State.SP, strconv.FormatInt(int64(ppuc), 10))
 			fmt.Printf("%v: %v", instructionsRun, log)
 			if c.cpuLog != nil {
 				c.cpuLog.WriteString(log)

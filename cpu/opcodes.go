@@ -54,7 +54,7 @@ func (o *Opcode) Bytes() string {
 	return strings.TrimSpace(op)
 }
 func (o *Opcode) Disassemble() string {
-	return strings.TrimSpace(fmt.Sprintf("%v %v", o.instruction, o.Operands()))
+	return fmt.Sprintf("%v %v", o.instruction, o.Operands())
 }
 func (o *Opcode) GetValueAt(s *State) string {
 	switch o.addressMode {
@@ -189,11 +189,11 @@ func getAddressMode(op byte) int {
 		return AddressAddress
 	case 0x00, 0x60, 0x40:
 		return AddressImplied
-	case 0x80:
-		return AddressAbsolute
-	case 0xA0, 0xC0, 0xE0:
+		//	case 0x80:
+		//		return AddressAbsolute
+	case 0xA0, 0xC0, 0xE0, 0x80:
 		return AddressImmediate
-	case 0x96, 0x97, 0x9E, 0x9F, 0xB6, 0xB7, 0xBF:
+	case 0x96, 0x97, 0x9E, 0x9F, 0xB6, 0xB7:
 		return AddressZeroPageY
 	case 0xBE:
 		return AddressAbsoluteY
@@ -345,7 +345,7 @@ func (o *Opcode) Executer() Executer {
 		return LDY(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	case opLSR:
 		return LSR(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
-	case opNOP:
+	case opNOP, opNOPu:
 		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	case opORA:
 		return ORA(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
@@ -391,6 +391,8 @@ func (o *Opcode) Executer() Executer {
 		return TXS(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	case opTYA:
 		return TYA(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opLAXu:
+		return LAX(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	default:
 		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	}

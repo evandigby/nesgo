@@ -285,6 +285,19 @@ func LDA(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		return cycles, s.PC + instructionLength
 	}
 }
+func LAX(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+	return func(s *State) (int, uint16) {
+		v, c := get(s)
+		if c {
+			cycles += 1
+		}
+		s.A = v
+		s.X = v
+		s.SetZero(v)
+		s.SetSign(v)
+		return cycles, s.PC + instructionLength
+	}
+}
 func LDX(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
