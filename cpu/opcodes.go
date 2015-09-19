@@ -22,6 +22,7 @@ type Opcode struct {
 	getter              Getter
 	setter              Setter
 	addressGetter       AddressGetter
+	addressGetterWrong  AddressGetter
 	intermediateAddress AddressGetter
 }
 
@@ -60,15 +61,15 @@ func (o *Opcode) GetValueAt(s *State) string {
 	case AddressZeroPage, AddressAbsolute:
 		return fmt.Sprintf("= %02X", o.Get(s))
 	case AddressZeroPageX, AddressZeroPageY:
-		return fmt.Sprintf("@ %02X = %02X", o.address, o.Get(s))
+		return fmt.Sprintf("@ %02X = %02X", o.addressGetter(s), o.Get(s))
 	case AddressIndirectX:
 		return fmt.Sprintf("@ %02X = %04X = %02X", o.intermediateAddress(s), o.addressGetter(s), o.Get(s))
 	case AddressIndirectY:
 		return fmt.Sprintf("= %04X @ %04X = %02X", o.intermediateAddress(s), o.addressGetter(s), o.Get(s))
 	case AddressAbsoluteX, AddressAbsoluteY:
-		return fmt.Sprintf("@ %04X = %02X", o.address, o.Get(s))
+		return fmt.Sprintf("@ %04X = %02X", o.addressGetter(s), o.Get(s))
 	case AddressIndirect:
-		return fmt.Sprintf("= %04X", o.address)
+		return fmt.Sprintf("= %04X", o.addressGetterWrong(s))
 	default:
 		return ""
 	}
@@ -94,6 +95,11 @@ func NewOpcode(memory []*byte, address uint16) *Opcode {
 	addressGetter := addressCalculator(addressMode, address, l, operand)
 	iaddressGetter := intermediateAddressCalculator(addressMode, l, operand)
 
+	addressGetterWrong := addressGetter
+	if addressMode == AddressIndirect {
+		addressGetterWrong = addressCalculator(AddressIndirectWrong, address, l, operand)
+	}
+
 	return &Opcode{
 		address,
 		opcode,
@@ -105,6 +111,7 @@ func NewOpcode(memory []*byte, address uint16) *Opcode {
 		getter,
 		setter,
 		addressGetter,
+		addressGetterWrong,
 		iaddressGetter,
 	}
 }
@@ -186,8 +193,10 @@ func getAddressMode(op byte) int {
 		return AddressAbsolute
 	case 0xA0, 0xC0, 0xE0:
 		return AddressImmediate
-	case 0x96, 0x97, 0x9E, 0x9F, 0xB6, 0xB7, 0xBE, 0xBF:
+	case 0x96, 0x97, 0x9E, 0x9F, 0xB6, 0xB7, 0xBF:
 		return AddressZeroPageY
+	case 0xBE:
+		return AddressAbsoluteY
 	case 0x6C:
 		return AddressIndirect
 	case 0x0A, 0x2A, 0x4A, 0x6A:

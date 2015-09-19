@@ -20,6 +20,7 @@ const (
 	AddressImplied
 	AddressAccumulator
 	AddressIndirect
+	AddressIndirectWrong
 	AddressIndirectX
 	AddressIndirectY
 	AddressRelative
@@ -286,7 +287,9 @@ func addressCalculator(addressMode int, address, instructionLength, operand uint
 	case AddressZeroPage:
 		return func(s *State) uint16 { return uint16(byte(operand)) }
 	case AddressAbsolute, AddressAddress:
-		return func(s *State) uint16 { return operand }
+		return func(s *State) uint16 {
+			return operand
+		}
 	case AddressZeroPageX:
 		return func(s *State) uint16 { return uint16(byte(operand) + s.X) }
 	case AddressZeroPageY:
@@ -297,8 +300,16 @@ func addressCalculator(addressMode int, address, instructionLength, operand uint
 		return func(s *State) uint16 { return operand + uint16(s.Y) }
 	case AddressIndirect:
 		lsb := operand
-		msb := uint16((byte(operand) + byte(1))) | (operand & 0xFF00)
-		return func(s *State) uint16 { return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb]) }
+		msb := uint16(byte(operand)+byte(1)) | (operand & 0xFF00)
+		return func(s *State) uint16 {
+			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb])
+		}
+	case AddressIndirectWrong:
+		lsb := operand
+		msb := operand + 1
+		return func(s *State) uint16 {
+			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb])
+		}
 	case AddressIndirectX:
 		return func(s *State) uint16 {
 			lsb := byte(operand) + s.X
@@ -458,7 +469,7 @@ func (s *State) invalidateExecutor(address uint16) {
 	}
 
 	for i := start; i < end; i++ {
-		op := NewOpcode(s.Memory, address)
+		op := NewOpcode(s.Memory, i)
 		s.Opcodes[i] = op
 		s.Executers[i] = op.Executer()
 	}
