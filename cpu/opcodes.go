@@ -41,7 +41,7 @@ func (o *Opcode) Get(s *State) byte {
 	v, _ := o.getter(s)
 	return v
 }
-func (o *Opcode) AddressGet(s *State) uint16 {
+func (o *Opcode) AddressGet(s *State) (uint16, bool) {
 	return o.addressGetter(s)
 }
 
@@ -57,19 +57,22 @@ func (o *Opcode) Disassemble() string {
 	return fmt.Sprintf("%v %v", o.instruction, o.Operands())
 }
 func (o *Opcode) GetValueAt(s *State) string {
+	addr, _ := o.addressGetter(s)
+	intAddr, _ := o.intermediateAddress(s)
+	addrWrong, _ := o.addressGetterWrong(s)
 	switch o.addressMode {
 	case AddressZeroPage, AddressAbsolute:
 		return fmt.Sprintf("= %02X", o.Get(s))
 	case AddressZeroPageX, AddressZeroPageY:
-		return fmt.Sprintf("@ %02X = %02X", o.addressGetter(s), o.Get(s))
+		return fmt.Sprintf("@ %02X = %02X", addr, o.Get(s))
 	case AddressIndirectX:
-		return fmt.Sprintf("@ %02X = %04X = %02X", o.intermediateAddress(s), o.addressGetter(s), o.Get(s))
+		return fmt.Sprintf("@ %02X = %04X = %02X", intAddr, addr, o.Get(s))
 	case AddressIndirectY:
-		return fmt.Sprintf("= %04X @ %04X = %02X", o.intermediateAddress(s), o.addressGetter(s), o.Get(s))
+		return fmt.Sprintf("= %04X @ %04X = %02X", intAddr, addr, o.Get(s))
 	case AddressAbsoluteX, AddressAbsoluteY:
-		return fmt.Sprintf("@ %04X = %02X", o.addressGetter(s), o.Get(s))
+		return fmt.Sprintf("@ %04X = %02X", addr, o.Get(s))
 	case AddressIndirect:
-		return fmt.Sprintf("= %04X", o.addressGetterWrong(s))
+		return fmt.Sprintf("= %04X", addrWrong)
 	default:
 		return ""
 	}
@@ -85,6 +88,7 @@ func NewOpcode(memory []*byte, address uint16) *Opcode {
 	if l == 0 {
 		return nil
 	}
+
 	instruction := getInstruction(op)
 	cycles := getCycles(instruction, addressMode)
 	operand := getValue(opcode)
@@ -345,8 +349,10 @@ func (o *Opcode) Executer() Executer {
 		return LDY(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	case opLSR:
 		return LSR(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
-	case opNOP, opNOPu:
+	case opNOP:
 		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opNOPu:
+		return NOPGET(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	case opORA:
 		return ORA(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	case opPHA:

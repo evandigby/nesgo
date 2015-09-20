@@ -88,10 +88,11 @@ func (c *CPU) execute() {
 					panic(err)
 				}
 				lastLogLine := nesLogLine
-				nesLogLine = string(l[0:73])
-				if nesLogLine != log[0:73] {
+				nesLogLine = string(l[0:81])
+				if nesLogLine != log[0:81] {
 					fmt.Printf("%v: %v\n", instructionsRun-1, lastLogLine)
 					fmt.Printf("%v: %v\n", instructionsRun, nesLogLine)
+
 					c.exit <- true
 				}
 			}
@@ -268,71 +269,73 @@ func calculateRelativeAddress(instructionLength, offset, pc uint16) (uint16, boo
 func intermediateAddressCalculator(addressMode int, instructionLength, offset uint16) AddressGetter {
 	switch addressMode {
 	case AddressIndirect:
-		return func(s *State) uint16 { return offset }
+		return func(s *State) (uint16, bool) { return offset, false }
 	case AddressIndirectX:
-		return func(s *State) uint16 { return uint16(byte(offset) + s.X) }
+		return func(s *State) (uint16, bool) { return uint16(byte(offset) + s.X), false }
 	case AddressIndirectY:
-		return func(s *State) uint16 {
+		return func(s *State) (uint16, bool) {
 			lsb := uint16(*s.Memory[byte(offset)])
 			msb := uint16(*s.Memory[byte(offset)+1])
-			return ((msb << 8) | lsb)
+			return ((msb << 8) | lsb), false
 		}
 	}
 
-	return func(s *State) uint16 { return 0 }
+	return func(s *State) (uint16, bool) { return 0, false }
 }
+
+type Getter func(s *State) (value byte, pageCrossed bool)
+type AddressGetter func(s *State) (uint16, bool)
+type Setter func(s *State, value byte) bool
 
 func addressCalculator(addressMode int, address, instructionLength, operand uint16) AddressGetter {
 	switch addressMode {
 	case AddressZeroPage:
-		return func(s *State) uint16 { return uint16(byte(operand)) }
+		return func(s *State) (uint16, bool) { return uint16(byte(operand)), false }
 	case AddressAbsolute, AddressAddress:
-		return func(s *State) uint16 {
-			return operand
+		return func(s *State) (uint16, bool) {
+			return operand, false
 		}
 	case AddressZeroPageX:
-		return func(s *State) uint16 { return uint16(byte(operand) + s.X) }
+		return func(s *State) (uint16, bool) { return uint16(byte(operand) + s.X), false }
 	case AddressZeroPageY:
-		return func(s *State) uint16 { return uint16(byte(operand) + s.Y) }
+		return func(s *State) (uint16, bool) { return uint16(byte(operand) + s.Y), false }
 	case AddressAbsoluteX:
-		return func(s *State) uint16 { return operand + uint16(s.X) }
+		return func(s *State) (uint16, bool) {
+			return operand + uint16(s.X), (operand&0x00FF)+uint16(s.X) > 0xFF
+		}
 	case AddressAbsoluteY:
-		return func(s *State) uint16 { return operand + uint16(s.Y) }
+		return func(s *State) (uint16, bool) { return operand + uint16(s.Y), (operand&0x00FF)+uint16(s.Y) > 0xFF }
 	case AddressIndirect:
 		lsb := operand
 		msb := uint16(byte(operand)+byte(1)) | (operand & 0xFF00)
-		return func(s *State) uint16 {
-			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb])
+		return func(s *State) (uint16, bool) {
+			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb]), false
 		}
 	case AddressIndirectWrong:
 		lsb := operand
 		msb := operand + 1
-		return func(s *State) uint16 {
-			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb])
+		return func(s *State) (uint16, bool) {
+			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb]), false
 		}
 	case AddressIndirectX:
-		return func(s *State) uint16 {
+		return func(s *State) (uint16, bool) {
 			lsb := byte(operand) + s.X
 			msb := lsb + 1
-			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb])
+			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb]), false
 		}
 	case AddressIndirectY:
-		return func(s *State) uint16 {
+		return func(s *State) (uint16, bool) {
 			lsb := uint16(*s.Memory[byte(operand)])
 			msb := uint16(*s.Memory[byte(operand)+1])
-			return ((msb << 8) | lsb) + uint16(s.Y)
+			return ((msb << 8) | lsb) + uint16(s.Y), lsb+uint16(s.Y) > 0x100
 		}
 	case AddressRelative:
 		addr, _ := calculateRelativeAddress(instructionLength, operand, address)
-		return func(s *State) uint16 { return addr }
+		return func(s *State) (uint16, bool) { return addr, false }
 	default:
-		return func(s *State) uint16 { return 0 }
+		return func(s *State) (uint16, bool) { return 0, false }
 	}
 }
-
-type Getter func(s *State) (value byte, pageCrossed bool)
-type AddressGetter func(s *State) uint16
-type Setter func(s *State, value byte) bool
 
 func getGetter(addressMode int, address, instructionLength, operand uint16) Getter {
 	ac := addressCalculator(addressMode, address, instructionLength, operand)
@@ -345,15 +348,19 @@ func getGetter(addressMode int, address, instructionLength, operand uint16) Gett
 	case AddressImplied:
 		return func(s *State) (value byte, pageCrossed bool) { return 0, false } // Not sure why we should ever get here
 	case AddressZeroPage:
-		addr := ac(nil)
-		return func(s *State) (value byte, pageCrossed bool) { return *s.Memory[addr], false }
+		addr, _ := ac(nil)
+		return func(s *State) (value byte, pageCrossed bool) {
+			return *s.Memory[addr], false
+		}
 	case AddressAbsolute, AddressAddress:
-		addr := ac(nil)
-		return func(s *State) (value byte, pageCrossed bool) { return *s.Memory[addr], false }
+		addr, _ := ac(nil)
+		return func(s *State) (value byte, pageCrossed bool) {
+			return *s.Memory[addr], false
+		}
 	default:
 		return func(s *State) (value byte, pageCrossed bool) {
-			addr := ac(s)
-			return *s.Memory[addr], false
+			addr, c := ac(s)
+			return *s.Memory[addr], c
 		}
 	}
 }
@@ -368,7 +375,7 @@ func getSetter(addressMode int, address, instructionLength, operand uint16) Sett
 			return false
 		}
 	case AddressZeroPage:
-		addr := ac(nil)
+		addr, _ := ac(nil)
 
 		return func(s *State, value byte) bool {
 			*s.Memory[addr] = value
@@ -377,98 +384,21 @@ func getSetter(addressMode int, address, instructionLength, operand uint16) Sett
 		}
 	default:
 		return func(s *State, value byte) bool {
-			addr := ac(s)
+			addr, c := ac(s)
 			*s.Memory[addr] = value
 			s.invalidateExecutor(addr)
-			return false
+			return c
 		}
-		/*
-			case AddressAbsolute, AddressAddress:
-				return func(s *State, value byte) bool {
-					*s.Memory[operand] = value
-					s.invalidateExecutor(operand)
-					return false
-				}
-			case AddressZeroPageX:
-				return func(s *State, value byte) bool {
-					addr := uint16(byte(operand) + s.X)
-					*s.Memory[addr] = value
-					s.invalidateExecutor(addr)
-					return false
-				}
-			case AddressZeroPageY:
-				return func(s *State, value byte) bool {
-					addr := uint16(byte(operand) + s.Y)
-					*s.Memory[addr] = value
-					s.invalidateExecutor(addr)
-					return false
-				}
-			case AddressAbsoluteX:
-				return func(s *State, value byte) bool {
-					addr := operand + uint16(s.X)
-					*s.Memory[addr] = value
-					s.invalidateExecutor(addr)
-					return false
-				}
-			case AddressAbsoluteY:
-				return func(s *State, value byte) bool {
-					addr := operand + uint16(s.Y)
-					*s.Memory[addr] = value
-					s.invalidateExecutor(addr)
-					return false
-				}
-			case AddressIndirect:
-				lsb := operand
-				msb := uint16((byte(operand) + byte(1))) | (operand & 0xFF00)
-
-				return func(s *State, value byte) bool {
-					addr := (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb])
-					*s.Memory[addr] = value
-					s.invalidateExecutor(addr)
-					return false
-				}
-			case AddressIndirectX:
-				return func(s *State, value byte) bool {
-					lsb := byte(operand) + s.X
-					msb := lsb + 1
-					addr := (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb])
-					*s.Memory[addr] = value
-					s.invalidateExecutor(addr)
-					return false
-				}
-			case AddressIndirectY:
-				return func(s *State, value byte) bool {
-					lsb := *s.Memory[byte(operand)]
-					msb := *s.Memory[byte(operand)+1]
-					addr := ((uint16(msb) << 8) | uint16(*s.Memory[lsb])) + uint16(s.Y)
-					*s.Memory[addr] = value
-					s.invalidateExecutor(addr)
-					return false
-				}
-			case AddressRelative:
-				addr, c := calculateRelativeAddress(instructionLength, operand, address)
-				return func(s *State, value byte) bool {
-					*s.Memory[addr] = value
-					s.invalidateExecutor(addr)
-					return c
-				}
-			default:
-				return func(s *State, value byte) bool { return false }
-		*/
 	}
 }
 
 func (s *State) invalidateExecutor(address uint16) {
 	start := address - 2
-	end := address + 2
 	if start < 0 {
 		start = 0
 	}
-	if end > MemSize {
-		end = MemSize
-	}
 
-	for i := start; i < end; i++ {
+	for i := start; i <= address; i++ {
 		op := NewOpcode(s.Memory, i)
 		s.Opcodes[i] = op
 		s.Executers[i] = op.Executer()

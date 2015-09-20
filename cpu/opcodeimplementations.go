@@ -5,7 +5,7 @@ func ADC(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 		t := uint16(v) + uint16(s.A)
 		if s.Carry {
@@ -24,7 +24,7 @@ func AND(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 		v = v & s.A
 		s.SetSign(v)
@@ -37,7 +37,7 @@ func ASL(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 
 		s.Carry = v&0x80 != 0
@@ -55,7 +55,7 @@ func branch(b bool, s *State, v uint16, c bool, instructionLength uint16, operan
 		if c {
 			cycles += 2
 		} else {
-			cycles += 1
+			cycles++
 		}
 
 		return cycles, v
@@ -86,7 +86,7 @@ func BIT(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 
 		r := s.A & byte(v)
@@ -169,7 +169,7 @@ func CLV(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 func compare(get Getter, instructionLength uint16, operand uint16, cycles int, V byte, s *State) (int, uint16) {
 	v, c := get(s)
 	if c {
-		cycles += 1
+		cycles++
 	}
 	t := V - v
 
@@ -224,7 +224,7 @@ func EOR(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 		s.A = s.A ^ v
 		s.SetZero(s.A)
@@ -260,7 +260,7 @@ func INY(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 }
 func JMP(get AddressGetter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		a := get(s)
+		a, _ := get(s)
 		return cycles, a
 	}
 }
@@ -269,7 +269,7 @@ func JSR(get AddressGetter, address, instructionLength, operand uint16, cycles i
 		v := s.PC + instructionLength - 1
 		s.Push(byte(v >> 8))
 		s.Push(byte(v))
-		a := get(s)
+		a, _ := get(s)
 		return cycles, a
 	}
 }
@@ -277,7 +277,7 @@ func LDA(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 		s.A = v
 		s.SetZero(v)
@@ -289,7 +289,7 @@ func LAX(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 		s.A = v
 		s.X = v
@@ -302,7 +302,7 @@ func LDX(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 		s.X = v
 		s.SetZero(v)
@@ -314,7 +314,7 @@ func LDY(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 		s.Y = v
 		s.SetZero(v)
@@ -326,7 +326,7 @@ func LSR(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 		s.Carry = v&1 != 0
 		v >>= 1
@@ -339,11 +339,22 @@ func LSR(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 func NOP(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) { return cycles, s.PC + instructionLength }
 }
+
+func NOPGET(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+	return func(s *State) (int, uint16) {
+		_, c := get(s)
+		rc := cycles
+		if c {
+			rc++
+		}
+		return rc, s.PC + instructionLength
+	}
+}
 func ORA(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 		s.A = s.A | v
 		s.SetZero(s.A)
@@ -423,7 +434,7 @@ func SBC(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 		if c {
-			cycles += 1
+			cycles++
 		}
 		t := uint16(s.A) - uint16(v)
 		if !s.Carry {

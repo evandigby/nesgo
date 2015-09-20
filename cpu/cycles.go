@@ -88,7 +88,7 @@ func getCycles(instruction string, addressMode int) int {
 	case AddressAbsolute:
 		cycles = 4 // With Exceptions
 	case AddressAbsoluteX:
-		return 4
+		cycles = 4
 	case AddressAbsoluteY:
 		cycles = 4 // With Exceptions
 	case AddressImplied:
