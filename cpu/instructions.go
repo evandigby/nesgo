@@ -90,6 +90,8 @@ func getInstruction(op byte) string {
 		return opRTS
 	case 0xE9, 0xE5, 0xF5, 0xED, 0xFD, 0xF9, 0xE1, 0xF1:
 		return opSBC
+	case 0xEB:
+		return opSBCu
 	case 0x38:
 		return opSEC
 	case 0xF8:
@@ -119,6 +121,8 @@ func getInstruction(op byte) string {
 		return opNOPu
 	case 0xA7, 0xB7, 0xAF, 0xBF, 0xA3, 0xB3:
 		return opLAXu
+	case 0x87, 0x97, 0x83, 0x8F:
+		return opSAXu
 	default:
 		return opUNK
 	}

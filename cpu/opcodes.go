@@ -199,7 +199,7 @@ func getAddressMode(op byte) int {
 		return AddressImmediate
 	case 0x96, 0x97, 0x9E, 0x9F, 0xB6, 0xB7:
 		return AddressZeroPageY
-	case 0xBE:
+	case 0xBE, 0xBF:
 		return AddressAbsoluteY
 	case 0x6C:
 		return AddressIndirect
@@ -371,7 +371,7 @@ func (o *Opcode) Executer() Executer {
 		return RTI(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	case opRTS:
 		return RTS(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
-	case opSBC:
+	case opSBC, opSBCu:
 		return SBC(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	case opSEC:
 		return SEC(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
@@ -399,6 +399,8 @@ func (o *Opcode) Executer() Executer {
 		return TYA(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	case opLAXu:
 		return LAX(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opSAXu:
+		return SAX(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	default:
 		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	}

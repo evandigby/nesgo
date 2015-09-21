@@ -60,4 +60,6 @@ const (
 	opTYA  = " TYA"
 	opNOPu = "*NOP"
 	opLAXu = "*LAX"
+	opSAXu = "*SAX"
+	opSBCu = "*SBC"
 )
