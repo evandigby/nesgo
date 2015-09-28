@@ -1,21 +1,23 @@
 // Decimal Mode Not Implemented -- doesn't exist in NES
 package cpu
 
-import "fmt"
+func adc(s *State, v byte) {
+	t := uint16(v) + uint16(s.A)
+	if s.Carry {
+		t += 1
+	}
+	bt := byte(t)
+	s.Carry = t > 0xFF
+	s.Overflow = ((((s.A ^ v) & 0x80) == 0) && ((s.A^bt)&0x80) != 0)
+	s.SetZero(bt)
+	s.SetSign(bt)
+	s.A = bt
+}
 
 func ADC(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
-		t := uint16(v) + uint16(s.A)
-		if s.Carry {
-			t += 1
-		}
-		bt := byte(t)
-		s.Carry = t > 0xFF
-		s.Overflow = ((((s.A ^ v) & 0x80) == 0) && ((s.A^bt)&0x80) != 0)
-		s.SetZero(bt)
-		s.SetSign(bt)
-		s.A = bt
+		adc(s, v)
 		if c {
 			return cycles + 1, s.PC + instructionLength
 		} else {
@@ -23,13 +25,19 @@ func ADC(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		}
 	}
 }
+
+func and(s *State, v byte) {
+	v = v & s.A
+	s.SetSign(v)
+	s.SetZero(v)
+	s.A = byte(v)
+}
+
 func AND(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
-		v = v & s.A
-		s.SetSign(v)
-		s.SetZero(v)
-		s.A = byte(v)
+		and(s, v)
+
 		if c {
 			return cycles + 1, s.PC + instructionLength
 		} else {
@@ -41,7 +49,6 @@ func AND(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 func SAX(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v := s.A & s.X
-		fmt.Printf("V: %X\n", v)
 		//s.SetSign(s.A)
 		//s.SetZero(s.A)
 		set(s, v)
@@ -49,15 +56,21 @@ func SAX(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	}
 }
 
+func asl(s *State, v byte) byte {
+	s.Carry = v&0x80 != 0
+	v <<= 1
+	v &= 0xFF
+	s.SetSign(v)
+	s.SetZero(v)
+	return v
+}
+
 func ASL(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
 
-		s.Carry = v&0x80 != 0
-		v <<= 1
-		v &= 0xFF
-		s.SetSign(v)
-		s.SetZero(v)
+		v = asl(s, v)
+
 		set(s, v)
 		if c {
 			return cycles + 1, s.PC + instructionLength
@@ -184,8 +197,7 @@ func CLV(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 	}
 }
 
-func compare(get Getter, instructionLength uint16, operand uint16, cycles int, V byte, s *State) (int, uint16) {
-	v, c := get(s)
+func compare(v byte, c bool, instructionLength uint16, operand uint16, cycles int, V byte, s *State) (int, uint16) {
 	t := V - v
 
 	s.Carry = V >= v
@@ -200,17 +212,20 @@ func compare(get Getter, instructionLength uint16, operand uint16, cycles int, V
 
 func CMP(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		return compare(get, instructionLength, operand, cycles, s.A, s)
+		v, c := get(s)
+		return compare(v, c, instructionLength, operand, cycles, s.A, s)
 	}
 }
 func CPX(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		return compare(get, instructionLength, operand, cycles, s.X, s)
+		v, c := get(s)
+		return compare(v, c, instructionLength, operand, cycles, s.X, s)
 	}
 }
 func CPY(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
-		return compare(get, instructionLength, operand, cycles, s.Y, s)
+		v, c := get(s)
+		return compare(v, c, instructionLength, operand, cycles, s.Y, s)
 	}
 }
 func DEC(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
@@ -239,12 +254,17 @@ func DEY(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		return cycles, s.PC + instructionLength
 	}
 }
+
+func eor(s *State, v byte) {
+	s.A = s.A ^ v
+	s.SetZero(s.A)
+	s.SetSign(s.A)
+}
+
 func EOR(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
-		s.A = s.A ^ v
-		s.SetZero(s.A)
-		s.SetSign(s.A)
+		eor(s, v)
 		if c {
 			return cycles + 1, s.PC + instructionLength
 		} else {
@@ -375,12 +395,19 @@ func NOPGET(get Getter, set Setter, address, instructionLength, operand uint16, 
 		}
 	}
 }
+
+func ora(s *State, v byte) {
+	s.A = s.A | v
+	s.SetZero(s.A)
+	s.SetSign(s.A)
+}
+
 func ORA(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
-		s.A = s.A | v
-		s.SetZero(s.A)
-		s.SetSign(s.A)
+
+		ora(s, v)
+
 		if c {
 			return cycles + 1, s.PC + instructionLength
 		} else {
@@ -414,32 +441,44 @@ func PLP(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		return cycles, s.PC + instructionLength
 	}
 }
+
+func rol(s *State, v byte) byte {
+	nc := v&0x80 != 0
+	v <<= 1
+	if s.Carry {
+		v |= 1
+	}
+	s.Carry = nc
+	s.SetZero(v)
+	s.SetSign(v)
+	return v
+}
+
 func ROL(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, _ := get(s)
-		nc := v&0x80 != 0
-		v <<= 1
-		if s.Carry {
-			v |= 1
-		}
-		s.Carry = nc
-		s.SetZero(v)
-		s.SetSign(v)
+		v = rol(s, v)
 		set(s, v)
 		return cycles, s.PC + instructionLength
 	}
 }
+
+func ror(s *State, v byte) byte {
+	nc := v&1 != 0
+	v >>= 1
+	if s.Carry {
+		v |= 0x80
+	}
+	s.Carry = nc
+	s.SetZero(v)
+	s.SetSign(v)
+	return v
+}
+
 func ROR(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, _ := get(s)
-		nc := v&1 != 0
-		v >>= 1
-		if s.Carry {
-			v |= 0x80
-		}
-		s.Carry = nc
-		s.SetZero(v)
-		s.SetSign(v)
+		v = ror(s, v)
 		set(s, v)
 		return cycles, s.PC + instructionLength
 	}
@@ -456,19 +495,24 @@ func RTS(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		return cycles, val
 	}
 }
+
+func sbc(s *State, v byte) {
+	t := uint16(s.A) - uint16(v)
+	if !s.Carry {
+		t -= 1
+	}
+	s.Carry = t < 0x100
+	bt := byte(t)
+	s.Overflow = ((((s.A ^ v) & 0x80) != 0) && ((s.A^bt)&0x80) != 0)
+	s.SetZero(bt)
+	s.SetSign(bt)
+	s.A = bt
+}
+
 func SBC(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
 	return func(s *State) (int, uint16) {
 		v, c := get(s)
-		t := uint16(s.A) - uint16(v)
-		if !s.Carry {
-			t -= 1
-		}
-		s.Carry = t < 0x100
-		bt := byte(t)
-		s.Overflow = ((((s.A ^ v) & 0x80) != 0) && ((s.A^bt)&0x80) != 0)
-		s.SetZero(bt)
-		s.SetSign(bt)
-		s.A = bt
+		sbc(s, v)
 		if c {
 			return cycles + 1, s.PC + instructionLength
 		} else {
@@ -555,6 +599,85 @@ func TYA(get Getter, set Setter, address, instructionLength, operand uint16, cyc
 		s.A = s.Y
 		s.SetZero(s.A)
 		s.SetSign(s.A)
+		return cycles, s.PC + instructionLength
+	}
+}
+
+func DCP(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+	return func(s *State) (int, uint16) {
+		v, c := get(s)
+		t := uint16(v)
+		t--
+		s.Carry = t < 0x100
+		v = byte(t)
+		set(s, v)
+
+		compare(v, c, instructionLength, operand, cycles, s.A, s)
+
+		return cycles, s.PC + instructionLength
+	}
+}
+
+func ISB(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+	return func(s *State) (int, uint16) {
+		v, _ := get(s)
+		v++
+		set(s, v)
+		sbc(s, v)
+
+		return cycles, s.PC + instructionLength
+	}
+}
+
+func SLO(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+	return func(s *State) (int, uint16) {
+		v, _ := get(s)
+
+		v = asl(s, v)
+
+		set(s, v)
+
+		ora(s, v)
+		return cycles, s.PC + instructionLength
+	}
+}
+
+func RLA(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+	return func(s *State) (int, uint16) {
+		v, _ := get(s)
+
+		v = rol(s, v)
+
+		set(s, v)
+
+		and(s, v)
+		return cycles, s.PC + instructionLength
+	}
+}
+
+func SRE(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+	return func(s *State) (int, uint16) {
+		v, _ := get(s)
+
+		s.Carry = v&1 != 0
+		v >>= 1 //ror(s, v)
+
+		set(s, v)
+
+		eor(s, v)
+		return cycles, s.PC + instructionLength
+	}
+}
+
+func RRA(get Getter, set Setter, address, instructionLength, operand uint16, cycles int) Executer {
+	return func(s *State) (int, uint16) {
+		v, _ := get(s)
+
+		v = ror(s, v)
+
+		set(s, v)
+
+		adc(s, v)
 		return cycles, s.PC + instructionLength
 	}
 }

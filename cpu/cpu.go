@@ -69,7 +69,7 @@ func (c *CPU) execute() {
 
 	cs := 0
 	instructionsRun := 0
-	var nesLogLine string
+	//var nesLogLine string
 	for {
 		<-c.Sync
 		if c.nintendulatorLog {
@@ -78,33 +78,35 @@ func (c *CPU) execute() {
 			ppuc := (cs * 3) % 341
 			log := fmt.Sprintf("%04X  %-8s %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3s\n", c.State.PC, op.Bytes(), disassembly, c.State.A, c.State.X, c.State.Y, c.State.Status(), c.State.SP, strconv.FormatInt(int64(ppuc), 10))
 			fmt.Printf("%v: %v", instructionsRun, log)
+
 			if c.cpuLog != nil {
 				c.cpuLog.WriteString(log)
 			}
 
-			if c.nesLog != nil {
-				l, _, err := c.nesLog.ReadLine()
-				if err != nil {
-					panic(err)
-				}
-				lastLogLine := nesLogLine
-				nesLogLine = string(l[0:81])
-				if nesLogLine != log[0:81] {
-					fmt.Printf("%v: %v\n", instructionsRun-1, lastLogLine)
-					fmt.Printf("%v: %v\n", instructionsRun, nesLogLine)
+			/*
+				if c.nesLog != nil {
+					l, _, err := c.nesLog.ReadLine()
+					if err != nil {
+						panic(err)
+					}
+					lastLogLine := nesLogLine
+					nesLogLine = string(l[0:81])
+						if nesLogLine != log[0:81] {
+							fmt.Printf("%v: %v\n", instructionsRun-1, lastLogLine)
+							fmt.Printf("%v: %v\n", instructionsRun, nesLogLine)
 
-					c.exit <- true
+							c.exit <- true
+						}
 				}
-			}
+			*/
 			instructionsRun++
-			if instructionsRun >= 8991 {
-				c.exit <- true
-			}
+			//			if instructionsRun >= 8991 {
 		}
 		cycles := c.State.Execute()
 		cs += cycles
 
 		c.Sync <- cycles
+
 	}
 }
 
@@ -250,19 +252,37 @@ func (s *State) PowerUp() {
 	s.Y = 0
 	s.SP = 0xFD
 	s.Interrupt = true
+	/*
+		for i := 0; i < 0x0800; i++ {
+			*s.Memory[i] = 0xFF
+		}
+	*/
+	*s.Memory[0x0008] = 0xF7
+	*s.Memory[0x0009] = 0xEF
+	*s.Memory[0x000A] = 0xDF
+	*s.Memory[0x000F] = 0xBF
+	*s.Memory[0x4017] = 0x00
+	*s.Memory[0x4015] = 0x00
+	for i := 0x4000; i < 0x4010; i++ {
+		*s.Memory[i] = 0x00
+	}
 }
 
 func (s *State) Reset() {
 	s.PC = uint16(*s.Memory[0xFFFC]) | (uint16(*s.Memory[0xFFFD]) << 8)
 	s.SP -= 3
 	s.Interrupt = true
+	*s.Memory[0x4015] = 0x00
 }
 
 func calculateRelativeAddress(instructionLength, offset, pc uint16) (uint16, bool) {
+	cmp := (pc + instructionLength) & 0xFF00
 	if offset&0x80 == 0 {
-		return pc + instructionLength + (offset & 0x7F), false
+		addr := pc + instructionLength + (offset & 0x7F)
+		return addr, cmp != (addr & 0xFF00)
 	} else {
-		return pc + instructionLength - (0x80 - (offset & 0x7F)), false
+		addr := pc + instructionLength - (0x80 - (offset & 0x7F))
+		return addr, cmp != (addr & 0xFF00)
 	}
 }
 

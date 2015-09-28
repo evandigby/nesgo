@@ -6,8 +6,8 @@
 	<script type="text/javascript">
 		var updateInterval;
 
-		var memoryOffsetStart = 0x0000;
-		var memoryOffsetEnd = 0x0800;
+		var memoryOffsetStart = 0x4000;
+		var memoryOffsetEnd = 0x4800;
 
 		function step() {
 			$.ajax({
@@ -161,7 +161,78 @@
 			updateDisassembly()
 		}
 
+		var screenContext;
+
+		var frames = 0;
+		var last = new Date().getTime();
+
+		function pack(bytes) {
+		    var str = "";
+		// You could make it faster by reading bytes.length once.
+		    for(var i = 0; i < bytes.length; i += 2) {
+		// If you're using signed bytes, you probably need to mask here.
+		        var char = bytes[i] << 8;
+		// (undefined | 0) === 0 so you can save a test here by doing
+		//     var char = (bytes[i] << 8) | (bytes[i + 1] & 0xff);
+		        if (bytes[i + 1])
+		            char |= bytes[i + 1];
+		// Instead of using string += you could push char onto an array
+		// and take advantage of the fact that String.fromCharCode can
+		// take any number of arguments to do
+		//     String.fromCharCode.apply(null, chars);
+		        str += String.fromCharCode(char);
+		    }
+		    return str;
+		}
+
+		function Render(data) {
+			++frames;
+
+//			if (frames % 30 == 0) {
+				n = new Date().getTime();
+
+				ms = n - last;
+
+				console.log('ms: ' + ms + ' s: ' + ms / 1000 + ' length: ' + data.length);
+
+				last = n;
+//			}			
+
+			/*
+			base64Data = btoa(String.fromCharCode.apply(null, data));
+
+			var image = document.createElement('img');
+		    image.src = 'data:image/jpeg;base64,' + base64Data;
+		    */
+			var image = document.createElement('img');
+		    image.src = 'data:image/jpeg;base64,' + data;
+		    image.onload = function() {
+			   screenContext.drawImage(image,0,0);
+			};
+		}
+
+
+
+		function openRenderSocket() {
+			var nesRender = new WebSocket("ws://localhost:9905/play", "nesrender");
+			nesRender.binaryType = 'arraybuffer';
+
+			nesRender.onerror = function(event) {
+				alert('error connecting');
+			}
+			nesRender.onmessage = function (event) {
+			  	//Render(new Uint8ClampedArray(event.data));
+			  	Render(event.data);
+			}
+		}
+
 		$( document ).ready( function() {
+			s = document.getElementById("nesScreen");
+
+			screenContext = s.getContext("2d");
+
+			openRenderSocket();
+
 			updateAll();
 			//updateInterval = setInterval(updateAll, 2000);
 			$('#step').click(function(event) {
@@ -169,11 +240,14 @@
 				event.preventDefault();
 			})
 		});
+
 	</script>
 </head>
 <body>
-
-
+	<div>
+		<canvas id="nesScreen" align="center" width="256" height="240" style="border:1px solid #000000;">
+		</canvas>
+	</div>
 	<h1>Controls</h1>
 	<div id="controls">
 		<input id="step" type="button" value="Step" />

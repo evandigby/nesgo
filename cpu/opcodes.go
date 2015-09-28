@@ -401,6 +401,45 @@ func (o *Opcode) Executer() Executer {
 		return LAX(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	case opSAXu:
 		return SAX(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+
+	case opAACu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opAARu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opASRu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opATXu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opAXSu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opDCPu:
+		return DCP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opDOPu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opISBu:
+		return ISB(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opKILu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opLARu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opRLAu:
+		return RLA(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opRRAu:
+		return RRA(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opSLOu:
+		return SLO(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opSREu:
+		return SRE(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opSXAu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opSYAu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opTOPu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opXAAu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
+	case opXASu:
+		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	default:
 		return NOP(o.getter, o.setter, o.address, o.length, o.value, o.cycles)
 	}

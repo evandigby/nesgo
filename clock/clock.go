@@ -53,7 +53,6 @@ func (c *Clock) execute() {
 		//	c.tick++
 		//}
 	}
-
 	endTime := time.Now()
 
 	totalTime := endTime.Sub(startTime)

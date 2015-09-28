@@ -3,6 +3,8 @@ package debug
 import (
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"strconv"
@@ -175,6 +177,28 @@ func (d *Debugger) disassembly(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, string(json))
 }
 
+func (d *Debugger) img(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+
+	img := image.NewNRGBA(image.Rect(0, 0, 256, 240))
+	red := true
+
+	for i := 0; i < len(img.Pix); i += 4 {
+		if red {
+			img.Pix[i] = 0xFF
+			img.Pix[i+1] = 0x00
+		} else {
+			img.Pix[i] = 0x00
+			img.Pix[i+1] = 0xFF
+		}
+		img.Pix[i+3] = 0xFF
+	}
+	red = !red
+	w.WriteHeader(http.StatusOK)
+
+	png.Encode(w, img)
+}
+
 func (d *Debugger) serve() {
 	http.Handle("/ui/", http.StripPrefix("/ui", http.FileServer(http.Dir(d.uiFolder))))
 	http.HandleFunc("/cpu", d.cpu)
@@ -182,6 +206,7 @@ func (d *Debugger) serve() {
 	http.HandleFunc("/stack", d.stack)
 	http.HandleFunc("/disassembly", d.disassembly)
 	http.HandleFunc("/step", d.step)
+	http.HandleFunc("/img", d.img)
 
 	http.ListenAndServe(":9905", nil)
 }

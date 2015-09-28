@@ -69,6 +69,60 @@ var cycleExceptions = map[string]map[int]int{
 		AddressAbsoluteY: 5,
 		AddressIndirectY: 6,
 	},
+	opDCPu: map[int]int{
+		AddressZeroPage:  5,
+		AddressZeroPageX: 6,
+		AddressAbsolute:  6,
+		AddressAbsoluteX: 7,
+		AddressAbsoluteY: 7,
+		AddressIndirectX: 8,
+		AddressIndirectY: 8,
+	},
+	opISBu: map[int]int{
+		AddressZeroPage:  5,
+		AddressZeroPageX: 6,
+		AddressAbsolute:  6,
+		AddressAbsoluteX: 7,
+		AddressAbsoluteY: 7,
+		AddressIndirectX: 8,
+		AddressIndirectY: 8,
+	},
+	opSLOu: map[int]int{
+		AddressZeroPage:  5,
+		AddressZeroPageX: 6,
+		AddressAbsolute:  6,
+		AddressAbsoluteX: 7,
+		AddressAbsoluteY: 7,
+		AddressIndirectX: 8,
+		AddressIndirectY: 8,
+	},
+	opRLAu: map[int]int{
+		AddressZeroPage:  5,
+		AddressZeroPageX: 6,
+		AddressAbsolute:  6,
+		AddressAbsoluteX: 7,
+		AddressAbsoluteY: 7,
+		AddressIndirectX: 8,
+		AddressIndirectY: 8,
+	},
+	opSREu: map[int]int{
+		AddressZeroPage:  5,
+		AddressZeroPageX: 6,
+		AddressAbsolute:  6,
+		AddressAbsoluteX: 7,
+		AddressAbsoluteY: 7,
+		AddressIndirectX: 8,
+		AddressIndirectY: 8,
+	},
+	opRRAu: map[int]int{
+		AddressZeroPage:  5,
+		AddressZeroPageX: 6,
+		AddressAbsolute:  6,
+		AddressAbsoluteX: 7,
+		AddressAbsoluteY: 7,
+		AddressIndirectX: 8,
+		AddressIndirectY: 8,
+	},
 }
 
 func getCycles(instruction string, addressMode int) int {
@@ -96,7 +150,7 @@ func getCycles(instruction string, addressMode int) int {
 	case AddressRelative:
 		cycles = 2 // With Exceptions
 	case AddressIndirectX:
-		return 6
+		cycles = 6 // With Exceptions
 	case AddressIndirectY:
 		cycles = 5 // With Exceptions
 	case AddressIndirect:

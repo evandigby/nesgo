@@ -3,13 +3,17 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"image"
+	"math/rand"
 	"os"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/evandigby/nesgo/clock"
 	"github.com/evandigby/nesgo/cpu"
 	"github.com/evandigby/nesgo/debug"
+	"github.com/evandigby/nesgo/ppu"
 	"github.com/evandigby/nesgo/rom"
 )
 
@@ -54,18 +58,18 @@ func main() {
 		defer nesLog.Close()
 	}
 
-	ppu := make(chan int)
+	ppuchan := make(chan int)
 
 	go func() {
 		for {
-			ppu <- 0
+			ppuchan <- 0
 		}
 	}()
 
 	exit := make(chan bool)
 
 	nesCPU := cpu.NewCPU(ines, exit, cpuLog, nesLog)
-	clock := clock.NewClock(21477272, nesCPU.Sync, ppu)
+	clock := clock.NewClock(21477272, nesCPU.Sync, ppuchan)
 	if cpuLog == nil {
 		clock.Pause()
 	}
@@ -74,7 +78,38 @@ func main() {
 
 	go func() {
 		<-exit
-		clock.Pause()
+		clock.Stop()
+	}()
+
+	renderer := ppu.NewWebSocketRenderer("/play")
+	rand.Seed(time.Now().Unix())
+	go func() {
+		img := image.NewNRGBA(image.Rect(0, 0, 256, 240))
+		red := true
+
+		for { //_ = range time.NewTicker(time.Second).C {
+			for i := range img.Pix {
+				if i%3 == 0 {
+					img.Pix[i] = 0xFF
+					continue
+				}
+				img.Pix[i] = byte(rand.Int())
+			}
+			/*
+				for i := 0; i < len(img.Pix); i += 4 {
+					if red {
+						img.Pix[i] = 0xFF
+						img.Pix[i+1] = 0x00
+					} else {
+						img.Pix[i] = 0x00
+						img.Pix[i+1] = 0xFF
+					}
+					img.Pix[i+3] = 0xFF
+				}
+			*/
+			red = !red
+			renderer.Render(img)
+		}
 	}()
 
 	debugger := debug.NewDebugger(nesCPU.State, clock, "./debug/ui/")
