@@ -3,12 +3,9 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"image"
-	"math/rand"
 	"os"
 	"runtime"
 	"sync"
-	"time"
 
 	"github.com/evandigby/nesgo/clock"
 	"github.com/evandigby/nesgo/cpu"
@@ -18,7 +15,7 @@ import (
 )
 
 func main() {
-	runtime.GOMAXPROCS(4)
+	runtime.GOMAXPROCS(runtime.NumCPU() - 1)
 	if len(os.Args) < 2 {
 		fmt.Printf("Not enough args\n")
 		return
@@ -60,59 +57,53 @@ func main() {
 
 	ppuchan := make(chan int)
 
-	go func() {
-		for {
-			ppuchan <- 0
-		}
-	}()
-
 	exit := make(chan bool)
 
-	nesCPU := cpu.NewCPU(ines, exit, cpuLog, nesLog)
+	renderer := ppu.NewWebSocketRenderer("/play")
+	p := ppu.NewPPU(ppuchan, ines, renderer)
+
+	nesCPU := cpu.NewCPU(ines, p.MemoryMap, exit, cpuLog, nesLog)
+
 	clock := clock.NewClock(21477272, nesCPU.Sync, ppuchan)
 	if cpuLog == nil {
-		clock.Pause()
+		//clock.Pause()
 	}
 	clock.Run()
 	nesCPU.Run()
+	p.Run()
 
 	go func() {
 		<-exit
 		clock.Stop()
 	}()
 
-	renderer := ppu.NewWebSocketRenderer("/play")
-	rand.Seed(time.Now().Unix())
-	go func() {
-		img := image.NewNRGBA(image.Rect(0, 0, 256, 240))
-		red := true
-
-		for { //_ = range time.NewTicker(time.Second).C {
-			for i := range img.Pix {
-				if i%3 == 0 {
-					img.Pix[i] = 0xFF
-					continue
-				}
-				img.Pix[i] = byte(rand.Int())
+	/*
+		rand.Seed(time.Now().Unix())
+		go func() {
+			colors := [][]byte{
+				[]byte{0xFF, 0x00, 0x00, 0xFF},
+				[]byte{0x00, 0xFF, 0x00, 0xFF},
+				[]byte{0x00, 0x00, 0xFF, 0xFF},
 			}
-			/*
-				for i := 0; i < len(img.Pix); i += 4 {
-					if red {
-						img.Pix[i] = 0xFF
-						img.Pix[i+1] = 0x00
-					} else {
-						img.Pix[i] = 0x00
-						img.Pix[i+1] = 0xFF
-					}
-					img.Pix[i+3] = 0xFF
-				}
-			*/
-			red = !red
-			renderer.Render(img)
-		}
-	}()
 
-	debugger := debug.NewDebugger(nesCPU.State, clock, "./debug/ui/")
+			for { //_ = range time.NewTicker(time.Second).C {
+				img := image.NewNRGBA(image.Rect(0, 0, 256, 240))
+				for i := 0; i < len(img.Pix); i += 4 {
+					color := 0
+					if rand.Int31n(100) < 10 {
+						color = rand.Intn(len(colors))
+					}
+					img.Pix[i] = colors[color][0]
+					img.Pix[i+1] = colors[color][1]
+					img.Pix[i+2] = colors[color][2]
+					img.Pix[i+3] = colors[color][3]
+				}
+				renderer.Render(img)
+			}
+		}()
+	*/
+
+	debugger := debug.NewDebugger(nesCPU.State, p, clock, "./debug/ui/")
 	debugger.Start()
 
 	wg := sync.WaitGroup{}

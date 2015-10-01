@@ -47,11 +47,12 @@ func (c *Clock) execute() {
 
 		c.cpu <- 0
 		cycles := <-c.cpu
-		c.tick += uint64(cycles)
-		//for i := 0; i < cycles*3; i++ {
-		//	<-c.ppu
-		//	c.tick++
-		//}
+		totalCycles := cycles * 3
+		for i := 0; i < totalCycles; i++ {
+			c.ppu <- 0
+			<-c.ppu
+		}
+		c.tick += uint64(totalCycles)
 	}
 	endTime := time.Now()
 

@@ -11,16 +11,18 @@ import (
 
 	"github.com/evandigby/nesgo/clock"
 	"github.com/evandigby/nesgo/cpu"
+	"github.com/evandigby/nesgo/ppu"
 )
 
 type Debugger struct {
 	uiFolder string
 	cpuState *cpu.State
+	ppu      *ppu.PPU
 	clock    *clock.Clock
 }
 
-func NewDebugger(s *cpu.State, cl *clock.Clock, uiFolder string) *Debugger {
-	return &Debugger{uiFolder, s, cl}
+func NewDebugger(s *cpu.State, p *ppu.PPU, cl *clock.Clock, uiFolder string) *Debugger {
+	return &Debugger{uiFolder, s, p, cl}
 }
 
 func (d *Debugger) writeError(w http.ResponseWriter, err error) {
@@ -83,6 +85,19 @@ func (d *Debugger) memory(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	j, err := d.getRange(d.cpuState.Memory, r)
+
+	if err != nil {
+		d.writeError(w, err)
+	} else {
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, string(j))
+	}
+}
+
+func (d *Debugger) ppuMemory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	j, err := d.getRange(d.ppu.Memory, r)
 
 	if err != nil {
 		d.writeError(w, err)
@@ -203,6 +218,7 @@ func (d *Debugger) serve() {
 	http.Handle("/ui/", http.StripPrefix("/ui", http.FileServer(http.Dir(d.uiFolder))))
 	http.HandleFunc("/cpu", d.cpu)
 	http.HandleFunc("/memory", d.memory)
+	http.HandleFunc("/ppumemory", d.ppuMemory)
 	http.HandleFunc("/stack", d.stack)
 	http.HandleFunc("/disassembly", d.disassembly)
 	http.HandleFunc("/step", d.step)

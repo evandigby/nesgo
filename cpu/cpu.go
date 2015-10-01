@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/evandigby/nesgo/nes"
 	"github.com/evandigby/nesgo/rom"
 )
 
@@ -38,8 +39,8 @@ type CPU struct {
 	exit             chan bool
 }
 
-func NewCPU(r rom.ROM, exit chan bool, log, nesLog *os.File) *CPU {
-	return &CPU{NewState(), r, true, log, bufio.NewReader(nesLog), make(chan int), exit}
+func NewCPU(r rom.ROM, memoryMap nes.MemoryMap, exit chan bool, log, nesLog *os.File) *CPU {
+	return &CPU{NewState(memoryMap), r, true, log, bufio.NewReader(nesLog), make(chan int), exit}
 }
 
 func (c *CPU) loadRom(r rom.ROM) {
@@ -65,14 +66,15 @@ func (c *CPU) loadRom(r rom.ROM) {
 func (c *CPU) execute() {
 	c.loadRom(c.rom)
 	c.State.PowerUp()
-	c.State.PC = 0xC000
+	//c.State.PC = 0xC000
 
 	cs := 0
 	instructionsRun := 0
-	//var nesLogLine string
+	c.nintendulatorLog = false
 	for {
 		<-c.Sync
 		if c.nintendulatorLog {
+			c.State.Debug = true
 			op := c.State.Opcodes[c.State.PC]
 			disassembly := fmt.Sprintf("%v %v", op.Disassemble(), op.GetValueAt(c.State))
 			ppuc := (cs * 3) % 341
@@ -100,6 +102,7 @@ func (c *CPU) execute() {
 				}
 			*/
 			instructionsRun++
+			c.State.Debug = false
 			//			if instructionsRun >= 8991 {
 		}
 		cycles := c.State.Execute()
@@ -188,11 +191,15 @@ type State struct {
 	Cartridge      []*byte    `json:"-"`
 	Executers      []Executer `json:"-"`
 	Opcodes        []*Opcode  `json:"-"`
+
+	memoryMap map[uint16]nes.ByteReadWriter
+
+	Debug bool
 }
 
 const MemSize = 0xFFFF
 
-func NewState() *State {
+func NewState(memoryMap nes.MemoryMap) *State {
 	tm := make([]byte, MemSize+1)
 	m := make([]*byte, MemSize+1)
 	for i := range m {
@@ -225,7 +232,7 @@ func NewState() *State {
 	// Cartridge Memory helper
 	c := m[0x8000 : MemSize+1]
 
-	return &State{Registers{}, Flags{}, m, s, ppu, apu, c, nil, nil}
+	return &State{Registers{}, Flags{}, m, s, ppu, apu, c, nil, nil, memoryMap, false}
 }
 
 func (s *State) Execute() int {
@@ -357,6 +364,22 @@ func addressCalculator(addressMode int, address, instructionLength, operand uint
 	}
 }
 
+func (s *State) get(address uint16) byte {
+	if m, ok := s.memoryMap[address]; ok {
+		return m.Read(s.Debug)
+	}
+
+	return *s.Memory[address]
+}
+
+func (s *State) set(address uint16, value byte) {
+	if m, ok := s.memoryMap[address]; ok {
+		m.Write(value)
+	}
+
+	*s.Memory[address] = value
+}
+
 func getGetter(addressMode int, address, instructionLength, operand uint16) Getter {
 	ac := addressCalculator(addressMode, address, instructionLength, operand)
 
@@ -370,17 +393,17 @@ func getGetter(addressMode int, address, instructionLength, operand uint16) Gett
 	case AddressZeroPage:
 		addr, _ := ac(nil)
 		return func(s *State) (value byte, pageCrossed bool) {
-			return *s.Memory[addr], false
+			return s.get(addr), false
 		}
 	case AddressAbsolute, AddressAddress:
 		addr, _ := ac(nil)
 		return func(s *State) (value byte, pageCrossed bool) {
-			return *s.Memory[addr], false
+			return s.get(addr), false
 		}
 	default:
 		return func(s *State) (value byte, pageCrossed bool) {
 			addr, c := ac(s)
-			return *s.Memory[addr], c
+			return s.get(addr), c
 		}
 	}
 }
@@ -398,14 +421,14 @@ func getSetter(addressMode int, address, instructionLength, operand uint16) Sett
 		addr, _ := ac(nil)
 
 		return func(s *State, value byte) bool {
-			*s.Memory[addr] = value
+			s.set(addr, value)
 			s.invalidateExecutor(addr)
 			return false
 		}
 	default:
 		return func(s *State, value byte) bool {
 			addr, c := ac(s)
-			*s.Memory[addr] = value
+			s.set(addr, value)
 			s.invalidateExecutor(addr)
 			return c
 		}

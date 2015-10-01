@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/base64"
 	"image"
-	"image/jpeg"
+	"image/png"
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
 
 type webSocketRenderer struct {
-	conn *websocket.Conn
+	conns []*websocket.Conn
 }
 
 func NewWebSocketRenderer(endpoint string) Renderer {
@@ -37,7 +38,7 @@ func (ws *webSocketRenderer) handler(w http.ResponseWriter, r *http.Request) {
 		panic("Unable to upgrade connection")
 	}
 
-	ws.conn = conn
+	ws.conns = append(ws.conns, conn)
 
 	for {
 		t, _, err := conn.ReadMessage()
@@ -52,18 +53,29 @@ func (ws *webSocketRenderer) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ws *webSocketRenderer) Render(img image.Image) {
-	if ws.conn == nil {
+	if len(ws.conns) == 0 {
 		return
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0))
 
-	err := jpeg.Encode(buf, img, &jpeg.Options{50})
-	//err := png.Encode(buf, img)
+	//err := jpeg.Encode(buf, img, &jpeg.Options{100})
+	err := png.Encode(buf, img)
 
 	if err != nil {
 		return
 	}
 
-	ws.conn.WriteMessage(websocket.TextMessage, []byte(base64.StdEncoding.EncodeToString(buf.Bytes())))
+	base64img := []byte(base64.StdEncoding.EncodeToString(buf.Bytes()))
+
+	var wg sync.WaitGroup
+	wg.Add(len(ws.conns))
+	for _, conn := range ws.conns {
+		go func() {
+			defer wg.Done()
+			conn.WriteMessage(websocket.TextMessage, base64img)
+		}()
+	}
+
+	wg.Wait()
 }

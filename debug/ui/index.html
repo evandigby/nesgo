@@ -9,6 +9,9 @@
 		var memoryOffsetStart = 0x4000;
 		var memoryOffsetEnd = 0x4800;
 
+		var ppuMemoryOffsetStart = 0x2000;
+		var ppuMemoryOffsetEnd = 0x3000;
+
 		function step() {
 			$.ajax({
 				type: 'POST',
@@ -107,6 +110,19 @@
 			});
 		}
 
+		function updatePPUMemory() {
+			$.getJSON("http://localhost:9905/ppumemory", {
+				start: ppuMemoryOffsetStart.toString(16), 
+				end: ppuMemoryOffsetEnd.toString(16)
+			},
+			function(data){ 
+				updateMemoryTable('PPUMemoryTable', 'PPUMemory', data, ppuMemoryOffsetStart); 
+			})
+			.fail(function() {
+				clearInterval(updateInterval)
+			});
+		}
+
 		function updateStack() {
 			$.getJSON("http://localhost:9905/stack", {
 				start: 0, 
@@ -155,10 +171,11 @@
 		}
 
 		function updateAll() {
-			updateCpuState()
-			updateMemory()
-			updateStack()
-			updateDisassembly()
+			updateCpuState();
+			updateMemory();
+			updatePPUMemory();
+			updateStack();
+			updateDisassembly();
 		}
 
 		var screenContext;
@@ -188,7 +205,7 @@
 		function Render(data) {
 			++frames;
 
-//			if (frames % 30 == 0) {
+			if (frames % 30 == 0) {
 				n = new Date().getTime();
 
 				ms = n - last;
@@ -196,7 +213,7 @@
 				console.log('ms: ' + ms + ' s: ' + ms / 1000 + ' length: ' + data.length);
 
 				last = n;
-//			}			
+			}			
 
 			/*
 			base64Data = btoa(String.fromCharCode.apply(null, data));
@@ -205,7 +222,7 @@
 		    image.src = 'data:image/jpeg;base64,' + base64Data;
 		    */
 			var image = document.createElement('img');
-		    image.src = 'data:image/jpeg;base64,' + data;
+		    image.src = 'data:image/png;base64,' + data;
 		    image.onload = function() {
 			   screenContext.drawImage(image,0,0);
 			};
@@ -215,10 +232,10 @@
 
 		function openRenderSocket() {
 			var nesRender = new WebSocket("ws://localhost:9905/play", "nesrender");
-			nesRender.binaryType = 'arraybuffer';
+			//nesRender.binaryType = 'arraybuffer';
 
 			nesRender.onerror = function(event) {
-				alert('error connecting');
+				console.log('error connecting', event);
 			}
 			nesRender.onmessage = function (event) {
 			  	//Render(new Uint8ClampedArray(event.data));
@@ -231,7 +248,7 @@
 
 			screenContext = s.getContext("2d");
 
-			openRenderSocket();
+			//penRenderSocket();
 
 			updateAll();
 			//updateInterval = setInterval(updateAll, 2000);
@@ -300,6 +317,9 @@
 	</div>
 	<div id="Stack">
 		<table id="StackTable"></table>
+	</div>
+	<div id="PPUMemory">
+		<table id="PPUMemoryTable"></table>
 	</div>
 	<div id="Memory">
 		<table id="MemoryTable"></table>
