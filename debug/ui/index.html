@@ -133,6 +133,17 @@
 			});
 		}
 
+		function updateOam() {
+			$.getJSON("http://localhost:9905/stack", {
+				start: 0, 
+			},
+			function(data) { updateMemoryTable('OAMTable', 'OAM', data, 0x00); })
+			.fail(function() {
+				clearInterval(updateInterval)
+			});
+		}
+
+
 		function updateDisassembly() {
 			$.getJSON("http://localhost:9905/disassembly",
 			function(data) { 
@@ -174,6 +185,7 @@
 			updateCpuState();
 			updateMemory();
 			updatePPUMemory();
+			updateOam();
 			updateStack();
 			updateDisassembly();
 		}
@@ -317,6 +329,9 @@
 	</div>
 	<div id="Stack">
 		<table id="StackTable"></table>
+	</div>
+	<div id="OAM">
+		<table id="OAMTable"></table>
 	</div>
 	<div id="PPUMemory">
 		<table id="PPUMemoryTable"></table>
