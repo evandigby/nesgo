@@ -10,6 +10,7 @@ import (
 	"github.com/evandigby/nesgo/clock"
 	"github.com/evandigby/nesgo/cpu"
 	"github.com/evandigby/nesgo/debug"
+	"github.com/evandigby/nesgo/nes"
 	"github.com/evandigby/nesgo/ppu"
 	"github.com/evandigby/nesgo/rom"
 )
@@ -62,7 +63,11 @@ func main() {
 	renderer := ppu.NewWebSocketRenderer("/play")
 	p := ppu.NewPPU(ppuchan, ines, renderer)
 
-	nesCPU := cpu.NewCPU(ines, p.MemoryMap, exit, cpuLog, nesLog)
+	n := nes.NewNES(p.MemoryMap)
+
+	n.LoadRom(ines)
+
+	nesCPU := cpu.NewCPU(n, exit, cpuLog, nesLog)
 
 	clock := clock.NewClock(21477272, nesCPU.Sync, ppuchan)
 	if cpuLog == nil {
@@ -103,7 +108,7 @@ func main() {
 		}()
 	*/
 
-	debugger := debug.NewDebugger(nesCPU.State, p, clock, "./debug/ui/")
+	debugger := debug.NewDebugger(n, nesCPU, p, clock, "./debug/ui/")
 	debugger.Start()
 
 	wg := sync.WaitGroup{}

@@ -11,18 +11,20 @@ import (
 
 	"github.com/evandigby/nesgo/clock"
 	"github.com/evandigby/nesgo/cpu"
+	"github.com/evandigby/nesgo/nes"
 	"github.com/evandigby/nesgo/ppu"
 )
 
 type Debugger struct {
 	uiFolder string
-	cpuState *cpu.State
+	nes      *nes.NES
+	cpu      *cpu.CPU
 	ppu      *ppu.PPU
 	clock    *clock.Clock
 }
 
-func NewDebugger(s *cpu.State, p *ppu.PPU, cl *clock.Clock, uiFolder string) *Debugger {
-	return &Debugger{uiFolder, s, p, cl}
+func NewDebugger(n *nes.NES, c *cpu.CPU, p *ppu.PPU, cl *clock.Clock, uiFolder string) *Debugger {
+	return &Debugger{uiFolder, n, c, p, cl}
 }
 
 func (d *Debugger) writeError(w http.ResponseWriter, err error) {
@@ -36,9 +38,9 @@ func (d *Debugger) writeError(w http.ResponseWriter, err error) {
 	}
 }
 
-func (d *Debugger) cpu(w http.ResponseWriter, r *http.Request) {
+func (d *Debugger) cpuState(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json, err := json.Marshal(d.cpuState)
+	json, err := json.Marshal(d.cpu)
 
 	if err != nil {
 		d.writeError(w, err)
@@ -84,7 +86,7 @@ func (d *Debugger) getRange(m []*byte, r *http.Request) (string, error) {
 func (d *Debugger) memory(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	j, err := d.getRange(d.cpuState.Memory, r)
+	j, err := d.getRange(d.nes.Memory, r)
 
 	if err != nil {
 		d.writeError(w, err)
@@ -123,7 +125,7 @@ func (d *Debugger) oam(w http.ResponseWriter, r *http.Request) {
 func (d *Debugger) stack(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	j, err := d.getRange(d.cpuState.Stack, r)
+	j, err := d.getRange(d.nes.Stack, r)
 
 	if err != nil {
 		d.writeError(w, err)
@@ -141,7 +143,7 @@ func (d *Debugger) step(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	d.clock.Step()
 
-	json, err := json.Marshal(d.cpuState)
+	json, err := json.Marshal(d.cpu)
 
 	if err != nil {
 		d.writeError(w, err)
@@ -159,19 +161,19 @@ type Disassembly struct {
 func (d *Debugger) disassembly(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	b := int64(d.cpuState.PC)
+	b := int64(d.cpu.PC)
 	e := b + 20
 
 	if start, ok := r.URL.Query()["start"]; ok && len(start) > 0 {
 		parsed, err := strconv.ParseInt(start[0], 16, 64)
-		if err == nil && parsed > 0 && parsed < int64(len(d.cpuState.Memory)) {
+		if err == nil && parsed > 0 && parsed < int64(len(d.nes.Memory)) {
 			b = parsed
 		}
 	}
 
 	if end, ok := r.URL.Query()["end"]; ok && len(end) > 0 {
 		parsed, err := strconv.ParseInt(end[0], 16, 64)
-		if err == nil && parsed > b && parsed < int64(len(d.cpuState.Memory)) {
+		if err == nil && parsed > b && parsed < int64(len(d.nes.Memory)) {
 			e = parsed
 		}
 	}
@@ -184,7 +186,7 @@ func (d *Debugger) disassembly(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		o := cpu.NewOpcode(d.cpuState.Memory, uint16(i))
+		o := cpu.NewOpcode(d.nes.Memory, uint16(i))
 		if o == nil {
 			disasm = append(disasm, Disassembly{strconv.FormatInt(int64(i), 16), "Unable to parse opcode"})
 			break
@@ -229,7 +231,7 @@ func (d *Debugger) img(w http.ResponseWriter, r *http.Request) {
 
 func (d *Debugger) serve() {
 	http.Handle("/ui/", http.StripPrefix("/ui", http.FileServer(http.Dir(d.uiFolder))))
-	http.HandleFunc("/cpu", d.cpu)
+	http.HandleFunc("/cpu", d.cpuState)
 	http.HandleFunc("/memory", d.memory)
 	http.HandleFunc("/ppumemory", d.ppuMemory)
 	http.HandleFunc("/oam", d.oam)

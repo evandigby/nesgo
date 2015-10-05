@@ -9,7 +9,7 @@ import (
 var ErrorUnknownAddressMode = errors.New("Unknown Addressing Mode")
 var ErrorUnknownInstruction = errors.New("Unknown Instruction")
 
-type Executer func(s *State) (cycles int, nexPc uint16)
+type Executer func(c *CPU) (cycles int, nexPc uint16)
 
 type Opcode struct {
 	address             uint16
@@ -37,12 +37,12 @@ func (o *Opcode) Opcode() []*byte { return o.opcode }
 
 func (o *Opcode) Instruction() string { return o.instruction }
 func (o *Opcode) Cycles() int         { return o.cycles }
-func (o *Opcode) Get(s *State) byte {
-	v, _ := o.getter(s)
+func (o *Opcode) Get(c *CPU) byte {
+	v, _ := o.getter(c)
 	return v
 }
-func (o *Opcode) AddressGet(s *State) (uint16, bool) {
-	return o.addressGetter(s)
+func (o *Opcode) AddressGet(c *CPU) (uint16, bool) {
+	return o.addressGetter(c)
 }
 
 func (o *Opcode) Bytes() string {
@@ -56,21 +56,21 @@ func (o *Opcode) Bytes() string {
 func (o *Opcode) Disassemble() string {
 	return fmt.Sprintf("%v %v", o.instruction, o.Operands())
 }
-func (o *Opcode) GetValueAt(s *State) string {
-	addr, _ := o.addressGetter(s)
-	intAddr, _ := o.intermediateAddress(s)
-	addrWrong, _ := o.addressGetterWrong(s)
+func (o *Opcode) GetValueAt(c *CPU) string {
+	addr, _ := o.addressGetter(c)
+	intAddr, _ := o.intermediateAddress(c)
+	addrWrong, _ := o.addressGetterWrong(c)
 	switch o.addressMode {
 	case AddressZeroPage, AddressAbsolute:
-		return fmt.Sprintf("= %02X", o.Get(s))
+		return fmt.Sprintf("= %02X", o.Get(c))
 	case AddressZeroPageX, AddressZeroPageY:
-		return fmt.Sprintf("@ %02X = %02X", addr, o.Get(s))
+		return fmt.Sprintf("@ %02X = %02X", addr, o.Get(c))
 	case AddressIndirectX:
-		return fmt.Sprintf("@ %02X = %04X = %02X", intAddr, addr, o.Get(s))
+		return fmt.Sprintf("@ %02X = %04X = %02X", intAddr, addr, o.Get(c))
 	case AddressIndirectY:
-		return fmt.Sprintf("= %04X @ %04X = %02X", intAddr, addr, o.Get(s))
+		return fmt.Sprintf("= %04X @ %04X = %02X", intAddr, addr, o.Get(c))
 	case AddressAbsoluteX, AddressAbsoluteY:
-		return fmt.Sprintf("@ %04X = %02X", addr, o.Get(s))
+		return fmt.Sprintf("@ %04X = %02X", addr, o.Get(c))
 	case AddressIndirect:
 		return fmt.Sprintf("= %04X", addrWrong)
 	default:

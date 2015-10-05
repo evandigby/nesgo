@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/evandigby/nesgo/nes"
-	"github.com/evandigby/nesgo/rom"
 )
 
 const (
@@ -29,44 +28,46 @@ const (
 )
 
 type CPU struct {
-	State *State
-	rom   rom.ROM
+	nes *nes.NES `json:"-"`
+	Registers
+	Flags
 
-	nintendulatorLog bool
-	cpuLog           *os.File
-	nesLog           *bufio.Reader
-	Sync             chan int
-	exit             chan bool
+	Executers []Executer `json:"-"`
+	Opcodes   []*Opcode  `json:"-"`
+
+	nintendulatorLog bool          `json:"-"`
+	cpuLog           *os.File      `json:"-"`
+	nesLog           *bufio.Reader `json:"-"`
+	Sync             chan int      `json:"-"`
+	exit             chan bool     `json:"-"`
 }
 
-func NewCPU(r rom.ROM, memoryMap nes.MemoryMap, exit chan bool, log, nesLog *os.File) *CPU {
-	return &CPU{NewState(memoryMap), r, true, log, bufio.NewReader(nesLog), make(chan int), exit}
-}
-
-func (c *CPU) loadRom(r rom.ROM) {
-	mirror := r.Pages() == 1
-	for i, v := range r.ProgramRom() {
-		*c.State.Cartridge[i] = *v
-		if mirror {
-			*c.State.Cartridge[i+0x4000] = *v
-		}
+func NewCPU(n *nes.NES, exit chan bool, log, nesLog *os.File) *CPU {
+	return &CPU{
+		nes:    n,
+		cpuLog: log,
+		nesLog: bufio.NewReader(nesLog),
+		Sync:   make(chan int),
+		exit:   exit,
 	}
+}
 
-	c.State.Opcodes = make([]*Opcode, len(c.State.Memory))
-	c.State.Executers = make([]Executer, len(c.State.Memory))
-	for i, _ := range c.State.Memory {
-		op := NewOpcode(c.State.Memory, uint16(i))
+func (c *CPU) loadOpcodes() {
+	c.Opcodes = make([]*Opcode, len(c.nes.Memory))
+	c.Executers = make([]Executer, len(c.nes.Memory))
+	for i, _ := range c.nes.Memory {
+		op := NewOpcode(c.nes.Memory, uint16(i))
 		if op != nil {
-			c.State.Opcodes[i] = op
-			c.State.Executers[i] = op.Executer()
+			c.Opcodes[i] = op
+			c.Executers[i] = op.Executer()
 		}
 	}
 }
 
 func (c *CPU) execute() {
-	c.loadRom(c.rom)
-	c.State.PowerUp()
-	//c.State.PC = 0xC000
+	c.PowerUp()
+	c.loadOpcodes()
+	//c.PC = 0xC000
 
 	cs := 0
 	instructionsRun := 0
@@ -74,11 +75,11 @@ func (c *CPU) execute() {
 	for {
 		<-c.Sync
 		if c.nintendulatorLog {
-			c.State.Debug = true
-			op := c.State.Opcodes[c.State.PC]
-			disassembly := fmt.Sprintf("%v %v", op.Disassemble(), op.GetValueAt(c.State))
+			c.nes.Debug = true
+			op := c.Opcodes[c.PC]
+			disassembly := fmt.Sprintf("%v %v", op.Disassemble(), op.GetValueAt(c))
 			ppuc := (cs * 3) % 341
-			log := fmt.Sprintf("%04X  %-8s %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3s\n", c.State.PC, op.Bytes(), disassembly, c.State.A, c.State.X, c.State.Y, c.State.Status(), c.State.SP, strconv.FormatInt(int64(ppuc), 10))
+			log := fmt.Sprintf("%04X  %-8s %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3s\n", c.PC, op.Bytes(), disassembly, c.A, c.X, c.Y, c.Status(), c.SP, strconv.FormatInt(int64(ppuc), 10))
 			fmt.Printf("%v: %v", instructionsRun, log)
 
 			if c.cpuLog != nil {
@@ -102,10 +103,10 @@ func (c *CPU) execute() {
 				}
 			*/
 			instructionsRun++
-			c.State.Debug = false
+			c.nes.Debug = false
 			//			if instructionsRun >= 8991 {
 		}
-		cycles := c.State.Execute()
+		cycles := c.Execute()
 		cs += cycles
 
 		c.Sync <- cycles
@@ -115,6 +116,189 @@ func (c *CPU) execute() {
 
 func (c *CPU) Run() {
 	go c.execute()
+}
+
+func (c *CPU) Execute() int {
+	cycles, pc := c.Executers[c.PC](c)
+	c.PC = pc
+
+	return cycles
+}
+
+func (c *CPU) Push(val byte) {
+	*c.nes.Stack[c.SP] = val
+	c.SP--
+}
+
+func (c *CPU) Pop() byte {
+	c.SP++
+	return *c.nes.Stack[c.SP]
+}
+
+func (c *CPU) PowerUp() {
+	c.PC = uint16(*c.nes.Memory[0xFFFC]) | (uint16(*c.nes.Memory[0xFFFD]) << 8)
+	c.A = 0
+	c.X = 0
+	c.Y = 0
+	c.SP = 0xFD
+	c.Interrupt = true
+}
+
+func (c *CPU) Reset() {
+	c.PC = uint16(*c.nes.Memory[0xFFFC]) | (uint16(*c.nes.Memory[0xFFFD]) << 8)
+	c.SP -= 3
+	c.Interrupt = true
+	*c.nes.Memory[0x4015] = 0x00
+}
+
+func calculateRelativeAddress(instructionLength, offset, pc uint16) (uint16, bool) {
+	cmp := (pc + instructionLength) & 0xFF00
+	if offset&0x80 == 0 {
+		addr := pc + instructionLength + (offset & 0x7F)
+		return addr, cmp != (addr & 0xFF00)
+	} else {
+		addr := pc + instructionLength - (0x80 - (offset & 0x7F))
+		return addr, cmp != (addr & 0xFF00)
+	}
+}
+
+func intermediateAddressCalculator(addressMode int, instructionLength, offset uint16) AddressGetter {
+	switch addressMode {
+	case AddressIndirect:
+		return func(c *CPU) (uint16, bool) { return offset, false }
+	case AddressIndirectX:
+		return func(c *CPU) (uint16, bool) { return uint16(byte(offset) + c.X), false }
+	case AddressIndirectY:
+		return func(c *CPU) (uint16, bool) {
+			lsb := uint16(*c.nes.Memory[byte(offset)])
+			msb := uint16(*c.nes.Memory[byte(offset)+1])
+			return ((msb << 8) | lsb), false
+		}
+	}
+
+	return func(c *CPU) (uint16, bool) { return 0, false }
+}
+
+type Getter func(c *CPU) (value byte, pageCrossed bool)
+type AddressGetter func(c *CPU) (uint16, bool)
+type Setter func(c *CPU, value byte) bool
+
+func addressCalculator(addressMode int, address, instructionLength, operand uint16) AddressGetter {
+	switch addressMode {
+	case AddressZeroPage:
+		return func(c *CPU) (uint16, bool) { return uint16(byte(operand)), false }
+	case AddressAbsolute, AddressAddress:
+		return func(c *CPU) (uint16, bool) {
+			return operand, false
+		}
+	case AddressZeroPageX:
+		return func(c *CPU) (uint16, bool) { return uint16(byte(operand) + c.X), false }
+	case AddressZeroPageY:
+		return func(c *CPU) (uint16, bool) { return uint16(byte(operand) + c.Y), false }
+	case AddressAbsoluteX:
+		return func(c *CPU) (uint16, bool) {
+			return operand + uint16(c.X), (operand&0x00FF)+uint16(c.X) > 0xFF
+		}
+	case AddressAbsoluteY:
+		return func(c *CPU) (uint16, bool) { return operand + uint16(c.Y), (operand&0x00FF)+uint16(c.Y) > 0xFF }
+	case AddressIndirect:
+		lsb := operand
+		msb := uint16(byte(operand)+byte(1)) | (operand & 0xFF00)
+		return func(c *CPU) (uint16, bool) {
+			return (uint16(*c.nes.Memory[msb]) << 8) | uint16(*c.nes.Memory[lsb]), false
+		}
+	case AddressIndirectWrong:
+		lsb := operand
+		msb := operand + 1
+		return func(c *CPU) (uint16, bool) {
+			return (uint16(*c.nes.Memory[msb]) << 8) | uint16(*c.nes.Memory[lsb]), false
+		}
+	case AddressIndirectX:
+		return func(c *CPU) (uint16, bool) {
+			lsb := byte(operand) + c.X
+			msb := lsb + 1
+			return (uint16(*c.nes.Memory[msb]) << 8) | uint16(*c.nes.Memory[lsb]), false
+		}
+	case AddressIndirectY:
+		return func(c *CPU) (uint16, bool) {
+			lsb := uint16(*c.nes.Memory[byte(operand)])
+			msb := uint16(*c.nes.Memory[byte(operand)+1])
+			return ((msb << 8) | lsb) + uint16(c.Y), lsb+uint16(c.Y) > 0x100
+		}
+	case AddressRelative:
+		addr, _ := calculateRelativeAddress(instructionLength, operand, address)
+		return func(c *CPU) (uint16, bool) { return addr, false }
+	default:
+		return func(c *CPU) (uint16, bool) { return 0, false }
+	}
+}
+
+func getGetter(addressMode int, address, instructionLength, operand uint16) Getter {
+	ac := addressCalculator(addressMode, address, instructionLength, operand)
+
+	switch addressMode {
+	case AddressImmediate:
+		return func(c *CPU) (value byte, pageCrossed bool) { return byte(operand), false }
+	case AddressAccumulator:
+		return func(c *CPU) (value byte, pageCrossed bool) { return c.A, false }
+	case AddressImplied:
+		return func(c *CPU) (value byte, pageCrossed bool) { return 0, false } // Not sure why we should ever get here
+	case AddressZeroPage:
+		addr, _ := ac(nil)
+		return func(c *CPU) (value byte, pageCrossed bool) {
+			return c.nes.Get(addr), false
+		}
+	case AddressAbsolute, AddressAddress:
+		addr, _ := ac(nil)
+		return func(c *CPU) (value byte, pageCrossed bool) {
+			return c.nes.Get(addr), false
+		}
+	default:
+		return func(c *CPU) (value byte, pageCrossed bool) {
+			addr, cycles := ac(c)
+			return c.nes.Get(addr), cycles
+		}
+	}
+}
+
+func getSetter(addressMode int, address, instructionLength, operand uint16) Setter {
+	ac := addressCalculator(addressMode, address, instructionLength, operand)
+
+	switch addressMode {
+	case AddressAccumulator:
+		return func(c *CPU, value byte) bool {
+			c.A = value
+			return false
+		}
+	case AddressZeroPage:
+		addr, _ := ac(nil)
+
+		return func(c *CPU, value byte) bool {
+			c.nes.Set(addr, value)
+			c.invalidateExecutor(addr)
+			return false
+		}
+	default:
+		return func(c *CPU, value byte) bool {
+			addr, cycles := ac(c)
+			c.nes.Set(addr, value)
+			c.invalidateExecutor(addr)
+			return cycles
+		}
+	}
+}
+
+func (c *CPU) invalidateExecutor(address uint16) {
+	start := address - 2
+	if start < 0 {
+		start = 0
+	}
+
+	for i := start; i <= address; i++ {
+		op := NewOpcode(c.nes.Memory, i)
+		c.Opcodes[i] = op
+		c.Executers[i] = op.Executer()
+	}
 }
 
 type Flags struct {
@@ -178,272 +362,4 @@ type Registers struct {
 	X  byte
 	Y  byte
 	SP byte
-}
-
-type State struct {
-	Registers
-	Flags
-
-	Memory         []*byte    `json:"-"`
-	Stack          []*byte    `json:"-"`
-	PPURegisters   []*byte    `json:"-"`
-	APUIORegisters []*byte    `json:"-"`
-	Cartridge      []*byte    `json:"-"`
-	Executers      []Executer `json:"-"`
-	Opcodes        []*Opcode  `json:"-"`
-
-	memoryMap map[uint16]nes.ByteReadWriter
-
-	Debug bool
-}
-
-const MemSize = 0xFFFF
-
-func NewState(memoryMap nes.MemoryMap) *State {
-	tm := make([]byte, MemSize+1)
-	m := make([]*byte, MemSize+1)
-	for i := range m {
-		m[i] = &tm[i]
-	}
-	// Make mirrored memory
-	for i := 1; i <= 3; i++ {
-		o := i * 0x0800
-		for x := 0; x < 0x0800; x++ {
-			m[o+x] = m[x]
-		}
-	}
-	// Make stack helper
-	s := m[0x0100:0x200] //m[0x0100:0x01FF]
-
-	// PPU Register helper
-	ppu := m[0x2000:0x2007]
-
-	// Make mirrored ppu registers
-	for i := 1; i <= 0x1FF8/8; i++ {
-		o := 0x2000 + (i * 8)
-		for x := range ppu {
-			m[o+x] = ppu[x]
-		}
-	}
-
-	// APU Register helper
-	apu := m[0x4000:0x4020]
-
-	// Cartridge Memory helper
-	c := m[0x8000 : MemSize+1]
-
-	return &State{Registers{}, Flags{}, m, s, ppu, apu, c, nil, nil, memoryMap, false}
-}
-
-func (s *State) Execute() int {
-	cycles, pc := s.Executers[s.PC](s)
-	s.PC = pc
-
-	return cycles
-}
-
-func (s *State) Push(val byte) {
-	*s.Stack[s.SP] = val
-	s.SP--
-}
-
-func (s *State) Pop() byte {
-	s.SP++
-	return *s.Stack[s.SP]
-}
-
-func (s *State) PowerUp() {
-	s.PC = uint16(*s.Memory[0xFFFC]) | (uint16(*s.Memory[0xFFFD]) << 8)
-	s.A = 0
-	s.X = 0
-	s.Y = 0
-	s.SP = 0xFD
-	s.Interrupt = true
-	/*
-		for i := 0; i < 0x0800; i++ {
-			*s.Memory[i] = 0xFF
-		}
-	*/
-	*s.Memory[0x0008] = 0xF7
-	*s.Memory[0x0009] = 0xEF
-	*s.Memory[0x000A] = 0xDF
-	*s.Memory[0x000F] = 0xBF
-	*s.Memory[0x4017] = 0x00
-	*s.Memory[0x4015] = 0x00
-	for i := 0x4000; i < 0x4010; i++ {
-		*s.Memory[i] = 0x00
-	}
-}
-
-func (s *State) Reset() {
-	s.PC = uint16(*s.Memory[0xFFFC]) | (uint16(*s.Memory[0xFFFD]) << 8)
-	s.SP -= 3
-	s.Interrupt = true
-	*s.Memory[0x4015] = 0x00
-}
-
-func calculateRelativeAddress(instructionLength, offset, pc uint16) (uint16, bool) {
-	cmp := (pc + instructionLength) & 0xFF00
-	if offset&0x80 == 0 {
-		addr := pc + instructionLength + (offset & 0x7F)
-		return addr, cmp != (addr & 0xFF00)
-	} else {
-		addr := pc + instructionLength - (0x80 - (offset & 0x7F))
-		return addr, cmp != (addr & 0xFF00)
-	}
-}
-
-func intermediateAddressCalculator(addressMode int, instructionLength, offset uint16) AddressGetter {
-	switch addressMode {
-	case AddressIndirect:
-		return func(s *State) (uint16, bool) { return offset, false }
-	case AddressIndirectX:
-		return func(s *State) (uint16, bool) { return uint16(byte(offset) + s.X), false }
-	case AddressIndirectY:
-		return func(s *State) (uint16, bool) {
-			lsb := uint16(*s.Memory[byte(offset)])
-			msb := uint16(*s.Memory[byte(offset)+1])
-			return ((msb << 8) | lsb), false
-		}
-	}
-
-	return func(s *State) (uint16, bool) { return 0, false }
-}
-
-type Getter func(s *State) (value byte, pageCrossed bool)
-type AddressGetter func(s *State) (uint16, bool)
-type Setter func(s *State, value byte) bool
-
-func addressCalculator(addressMode int, address, instructionLength, operand uint16) AddressGetter {
-	switch addressMode {
-	case AddressZeroPage:
-		return func(s *State) (uint16, bool) { return uint16(byte(operand)), false }
-	case AddressAbsolute, AddressAddress:
-		return func(s *State) (uint16, bool) {
-			return operand, false
-		}
-	case AddressZeroPageX:
-		return func(s *State) (uint16, bool) { return uint16(byte(operand) + s.X), false }
-	case AddressZeroPageY:
-		return func(s *State) (uint16, bool) { return uint16(byte(operand) + s.Y), false }
-	case AddressAbsoluteX:
-		return func(s *State) (uint16, bool) {
-			return operand + uint16(s.X), (operand&0x00FF)+uint16(s.X) > 0xFF
-		}
-	case AddressAbsoluteY:
-		return func(s *State) (uint16, bool) { return operand + uint16(s.Y), (operand&0x00FF)+uint16(s.Y) > 0xFF }
-	case AddressIndirect:
-		lsb := operand
-		msb := uint16(byte(operand)+byte(1)) | (operand & 0xFF00)
-		return func(s *State) (uint16, bool) {
-			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb]), false
-		}
-	case AddressIndirectWrong:
-		lsb := operand
-		msb := operand + 1
-		return func(s *State) (uint16, bool) {
-			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb]), false
-		}
-	case AddressIndirectX:
-		return func(s *State) (uint16, bool) {
-			lsb := byte(operand) + s.X
-			msb := lsb + 1
-			return (uint16(*s.Memory[msb]) << 8) | uint16(*s.Memory[lsb]), false
-		}
-	case AddressIndirectY:
-		return func(s *State) (uint16, bool) {
-			lsb := uint16(*s.Memory[byte(operand)])
-			msb := uint16(*s.Memory[byte(operand)+1])
-			return ((msb << 8) | lsb) + uint16(s.Y), lsb+uint16(s.Y) > 0x100
-		}
-	case AddressRelative:
-		addr, _ := calculateRelativeAddress(instructionLength, operand, address)
-		return func(s *State) (uint16, bool) { return addr, false }
-	default:
-		return func(s *State) (uint16, bool) { return 0, false }
-	}
-}
-
-func (s *State) get(address uint16) byte {
-	if m, ok := s.memoryMap[address]; ok {
-		return m.Read(s.Debug)
-	}
-
-	return *s.Memory[address]
-}
-
-func (s *State) set(address uint16, value byte) {
-	if m, ok := s.memoryMap[address]; ok {
-		m.Write(value)
-	}
-
-	*s.Memory[address] = value
-}
-
-func getGetter(addressMode int, address, instructionLength, operand uint16) Getter {
-	ac := addressCalculator(addressMode, address, instructionLength, operand)
-
-	switch addressMode {
-	case AddressImmediate:
-		return func(s *State) (value byte, pageCrossed bool) { return byte(operand), false }
-	case AddressAccumulator:
-		return func(s *State) (value byte, pageCrossed bool) { return s.A, false }
-	case AddressImplied:
-		return func(s *State) (value byte, pageCrossed bool) { return 0, false } // Not sure why we should ever get here
-	case AddressZeroPage:
-		addr, _ := ac(nil)
-		return func(s *State) (value byte, pageCrossed bool) {
-			return s.get(addr), false
-		}
-	case AddressAbsolute, AddressAddress:
-		addr, _ := ac(nil)
-		return func(s *State) (value byte, pageCrossed bool) {
-			return s.get(addr), false
-		}
-	default:
-		return func(s *State) (value byte, pageCrossed bool) {
-			addr, c := ac(s)
-			return s.get(addr), c
-		}
-	}
-}
-
-func getSetter(addressMode int, address, instructionLength, operand uint16) Setter {
-	ac := addressCalculator(addressMode, address, instructionLength, operand)
-
-	switch addressMode {
-	case AddressAccumulator:
-		return func(s *State, value byte) bool {
-			s.A = value
-			return false
-		}
-	case AddressZeroPage:
-		addr, _ := ac(nil)
-
-		return func(s *State, value byte) bool {
-			s.set(addr, value)
-			s.invalidateExecutor(addr)
-			return false
-		}
-	default:
-		return func(s *State, value byte) bool {
-			addr, c := ac(s)
-			s.set(addr, value)
-			s.invalidateExecutor(addr)
-			return c
-		}
-	}
-}
-
-func (s *State) invalidateExecutor(address uint16) {
-	start := address - 2
-	if start < 0 {
-		start = 0
-	}
-
-	for i := start; i <= address; i++ {
-		op := NewOpcode(s.Memory, i)
-		s.Opcodes[i] = op
-		s.Executers[i] = op.Executer()
-	}
 }
