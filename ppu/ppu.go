@@ -20,6 +20,7 @@ type Registers struct {
 }
 
 type PPU struct {
+	nes    *nes.NES
 	sync   chan int
 	Memory []*byte
 	OAM    []*byte
@@ -43,12 +44,10 @@ type PPU struct {
 
 	*Registers
 
-	MemoryMap nes.MemoryMap
-
 	frame *image.NRGBA
 }
 
-func NewPPU(sync chan int, rom rom.ROM, renderer Renderer) *PPU {
+func NewPPU(n *nes.NES, sync chan int, rom rom.ROM, renderer Renderer) *PPU {
 	tm := make([]byte, 0x4000)
 	m := make([]*byte, 0x4000)
 
@@ -77,6 +76,7 @@ func NewPPU(sync chan int, rom rom.ROM, renderer Renderer) *PPU {
 	}
 
 	ppu := &PPU{
+		nes:       n,
 		sync:      sync,
 		Memory:    m,
 		OAM:       oam,
@@ -85,7 +85,7 @@ func NewPPU(sync chan int, rom rom.ROM, renderer Renderer) *PPU {
 		Registers: &Registers{},
 	}
 
-	mm := nes.MemoryMap{
+	n.MemoryMap = nes.MemoryMap{
 		0x2000: &MappedRegister{func(debug bool) byte { return ppu.PPUCTRL }, func(val byte) { ppu.PPUCTRL = val }},
 		0x2001: &MappedRegister{func(debug bool) byte { return ppu.PPUMASK }, func(val byte) { ppu.PPUMASK = val }},
 		0x2002: &MappedRegister{ppu.ReadPPUStatus, func(val byte) { ppu.PPUSTATUS = val }},
@@ -94,16 +94,8 @@ func NewPPU(sync chan int, rom rom.ROM, renderer Renderer) *PPU {
 		0x2005: &MappedRegister{func(debug bool) byte { return ppu.PPUSCROLL }, ppu.WritePPUSCROLL},
 		0x2006: &MappedRegister{func(debug bool) byte { return ppu.PPUADDR }, ppu.WritePPUADDR},
 		0x2007: &MappedRegister{ppu.ReadPPUDATA, ppu.WritePPUDATA},
-		0x4014: &MappedRegister{func(debug bool) byte {
-			return ppu.OAMDMA
-		},
-			func(val byte) {
-				ppu.OAMDMA = val
-			},
-		},
+		0x4014: &MappedRegister{func(debug bool) byte { return ppu.OAMDMA }, ppu.WriteOAMDMA},
 	}
-
-	ppu.MemoryMap = mm
 
 	return ppu
 }
@@ -176,6 +168,15 @@ func (p *PPU) ReadPPUDATA(debug bool) byte {
 	}
 
 	return val
+}
+
+func (p *PPU) WriteOAMDMA(value byte) {
+	start := uint16(value) << 8
+	end := start + 0x100
+	d := p.nes.GetRange(start, end)
+	for i, v := range d {
+		*p.OAM[i] = *v
+	}
 }
 
 type MappedRegister struct {
@@ -275,8 +276,6 @@ func (p *PPU) execute() {
 				p.scanLine = -1
 			}
 		}
-
-		//fmt.Printf("Running Cycle %v on Scan Line %v\n", p.cycle, p.scanLine)
 
 		p.runCycle()
 

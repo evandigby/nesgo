@@ -60,10 +60,10 @@ func main() {
 
 	exit := make(chan bool)
 
-	renderer := ppu.NewWebSocketRenderer("/play")
-	p := ppu.NewPPU(ppuchan, ines, renderer)
+	n := nes.NewNES()
 
-	n := nes.NewNES(p.MemoryMap)
+	renderer := ppu.NewWebSocketRenderer("/play")
+	p := ppu.NewPPU(n, ppuchan, ines, renderer)
 
 	n.LoadRom(ines)
 

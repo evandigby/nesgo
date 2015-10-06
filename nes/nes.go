@@ -14,14 +14,14 @@ type NES struct {
 	Stack     []*byte `json:"-"`
 	Cartridge []*byte `json:"-"`
 
-	memoryMap map[uint16]ByteReadWriter
+	MemoryMap map[uint16]ByteReadWriter
 
 	Debug bool
 }
 
 const MemSize = 0xFFFF
 
-func NewNES(memoryMap MemoryMap) *NES {
+func NewNES() *NES {
 	tm := make([]byte, MemSize+1)
 	m := make([]*byte, MemSize+1)
 	for i := range m {
@@ -40,7 +40,12 @@ func NewNES(memoryMap MemoryMap) *NES {
 	// Cartridge Memory helper
 	c := m[0x8000 : MemSize+1]
 
-	return &NES{m, s, c, memoryMap, false}
+	return &NES{
+		Memory:    m,
+		Stack:     s,
+		Cartridge: c,
+		Debug:     false,
+	}
 }
 
 func (n *NES) LoadRom(r rom.ROM) {
@@ -75,15 +80,19 @@ func (n *NES) Reset() {
 }
 
 func (n *NES) Get(address uint16) byte {
-	if m, ok := n.memoryMap[address]; ok {
+	if m, ok := n.MemoryMap[address]; ok {
 		return m.Read(n.Debug)
 	}
 
 	return *n.Memory[address]
 }
 
+func (n *NES) GetRange(start, end uint16) []*byte {
+	return n.Memory[start:end]
+}
+
 func (n *NES) Set(address uint16, value byte) {
-	if m, ok := n.memoryMap[address]; ok {
+	if m, ok := n.MemoryMap[address]; ok {
 		m.Write(value)
 	}
 
